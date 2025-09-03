@@ -20,7 +20,7 @@ from .EmployeeView import (
 )
 
 from .AdminView import (
-    AdminDashboardView
+    AdminDashboardView,AdminCourseView,AdminCourseLessonView
 )
 from rest_framework.routers import DefaultRouter
 
@@ -91,5 +91,7 @@ urlpatterns = [
     path('curriculum/lessons/detail/<slug:slug>/', LessonDetailAPIView.as_view(), name='lesson-detail'),
 
     # Admin Urls
+    path('custom_admin/courses/', AdminCourseView.as_view(), name='courses'), 
+    path('custom_admin/course-lessons/', AdminCourseLessonView.as_view(), name='course-lessons'),
     path('custom_admin/<str:username>', AdminDashboardView.as_view(), name='admin-dashboard'),
 ]

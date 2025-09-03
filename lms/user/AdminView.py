@@ -108,7 +108,7 @@ class AdminDashboardView(APIView):
         }, status=200)
 
 
-class TrainerCourseView(ListCreateAPIView):
+class AdminCourseView(ListCreateAPIView):
     serializer_class = CourseSerializer
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
@@ -117,7 +117,7 @@ class TrainerCourseView(ListCreateAPIView):
     def get_queryset(self):
         try:
             trainer = AdminProfile.objects.get(user=self.request.user)
-            return Courses.objects.filter(department=trainer.department, display_on_frontend=True)
+            return Courses.objects.filter(display_on_frontend=True)
         except AdminProfile.DoesNotExist:
             return Courses.objects.none()
 
@@ -128,7 +128,7 @@ class TrainerCourseView(ListCreateAPIView):
 
 
 
-class TrainerCourseLessonView(ListCreateAPIView):
+class AdminCourseLessonView(ListCreateAPIView):
     serializer_class = CourseLessonSerializer
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
@@ -137,7 +137,6 @@ class TrainerCourseLessonView(ListCreateAPIView):
     def get_queryset(self):
         trainer = get_object_or_404(AdminProfile, user=self.request.user)
         return CourseLesson.objects.filter(
-            course__department=trainer.department,
             display_on_frontend=True
         )
 
@@ -426,25 +425,6 @@ class LMSEngagementView(ListAPIView):
                 pass
 
         return qs
-        
-# class TrainerDashboardViewSet(viewsets.ViewSet):
-#     permission_classes = [IsAuthenticated]
-
-#     @action(detail=False, methods=['get'], url_path='active-users')
-#     def active_users(self, request):
-#         """Return the list of active (logged-in) students for the teacher's school."""
-#         user = request.user
-#         try:
-#             teacher_obj = AdminProfile.objects.get(user=user)
-#             department= teacher_obj.department
-#         except AdminProfile.DoesNotExist:
-#             raise NotFound(detail="Teacher record not found for this user.")
-
-#         # ✅ Get active students from the same school
-#         active_students = get_active_students(department)
-#         serialized_students = EmployeeSerializer(active_students, many=True).data
-
-#         return Response({"active_users": serialized_students})
     
 
 class RecentActivityView(APIView):
