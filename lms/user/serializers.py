@@ -43,7 +43,7 @@ class TraineeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TraineeProfile
-        fields = ['user','name', 'employee_id', 'department', 'designation', 'trainer']
+        fields = ['user','name', 'employee_id', 'department', 'designation', 'trainer','profile_picture']
 
     def create(self, validated_data):
         user_data = validated_data.pop('user')
@@ -56,7 +56,7 @@ class TraineeSerializer(serializers.ModelSerializer):
             user_serializer = CustomUserSerializer(instance=user, data=user_data, partial=True)
             user_serializer.is_valid(raise_exception=True)
             user = user_serializer.save()
-        profile_data = {k: v for k, v in validated_data.items() if k in ['name','employee_id', 'department', 'designation', 'trainer']}
+        profile_data = {k: v for k, v in validated_data.items() if k in ['name','employee_id', 'department', 'designation', 'trainer','profile_picture']}
         profile, created = TraineeProfile.objects.get_or_create(user=user, defaults=profile_data)
         if not created:
             for key, value in profile_data.items():
@@ -69,7 +69,7 @@ class TraineeSerializer(serializers.ModelSerializer):
         user_serializer = CustomUserSerializer(instance=instance.user, data=user_data, partial=True)
         user_serializer.is_valid(raise_exception=True)
         user = user_serializer.save()
-        profile_data = {k: v for k, v in validated_data.items() if k in ['name','employee_id', 'department', 'designation', 'trainer']}
+        profile_data = {k: v for k, v in validated_data.items() if k in ['name','employee_id', 'department', 'designation', 'trainer','profile_picture']}
         for key, value in profile_data.items():
             setattr(instance, key, value)
         instance.save()
@@ -80,7 +80,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = EmployeeProfile
-        fields = ['name','user', 'employee_id', 'department', 'designation']
+        fields = ['name','user', 'employee_id', 'department', 'designation','profile_picture']
 
     def create(self, validated_data):
         user_data = validated_data.pop('user')
@@ -93,7 +93,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
             user_serializer = CustomUserSerializer(instance=user, data=user_data, partial=True)
             user_serializer.is_valid(raise_exception=True)
             user = user_serializer.save()
-        profile_data = {k: v for k, v in validated_data.items() if k in ['name','employee_id', 'department', 'designation']}
+        profile_data = {k: v for k, v in validated_data.items() if k in ['name','employee_id', 'department', 'designation','profile_picture']}
         profile, created = EmployeeProfile.objects.get_or_create(user=user, defaults=profile_data)
         if not created:
             for key, value in profile_data.items():
@@ -106,7 +106,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
         user_serializer = CustomUserSerializer(instance=instance.user, data=user_data, partial=True)
         user_serializer.is_valid(raise_exception=True)
         user = user_serializer.save()
-        profile_data = {k: v for k, v in validated_data.items() if k in ['name','employee_id', 'department', 'designation']}
+        profile_data = {k: v for k, v in validated_data.items() if k in ['name','employee_id', 'department', 'designation','profile_picture']}
         for key, value in profile_data.items():
             setattr(instance, key, value)
         instance.save()
@@ -130,7 +130,7 @@ class TrainerSerializer(serializers.ModelSerializer):
             user_serializer = CustomUserSerializer(instance=user, data=user_data, partial=True)
             user_serializer.is_valid(raise_exception=True)
             user = user_serializer.save()
-        profile_data = {k: v for k, v in validated_data.items() if k in ['name','employee_id', 'department', 'designation', 'expertise']}
+        profile_data = {k: v for k, v in validated_data.items() if k in ['name','employee_id', 'department', 'designation', 'expertise','profile_picture']}
         profile, created = TrainerProfile.objects.get_or_create(user=user, defaults=profile_data)
         if not created:
             for key, value in profile_data.items():
@@ -143,7 +143,7 @@ class TrainerSerializer(serializers.ModelSerializer):
         user_serializer = CustomUserSerializer(instance=instance.user, data=user_data, partial=True)
         user_serializer.is_valid(raise_exception=True)
         user = user_serializer.save()
-        profile_data = {k: v for k, v in validated_data.items() if k in ['name','employee_id', 'department', 'designation', 'expertise']}
+        profile_data = {k: v for k, v in validated_data.items() if k in ['name','employee_id', 'department', 'designation', 'expertise','profile_picture']}
         for key, value in profile_data.items():
             setattr(instance, key, value)
         instance.save()
@@ -154,7 +154,7 @@ class AdminSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AdminProfile
-        fields = ['user','name', 'employee_id', 'department', 'designation']
+        fields = ['user','name', 'employee_id', 'department', 'designation','profile_picture']
 
     def create(self, validated_data):
         user_data = validated_data.pop('user')
@@ -167,7 +167,7 @@ class AdminSerializer(serializers.ModelSerializer):
             user_serializer = CustomUserSerializer(instance=user, data=user_data, partial=True)
             user_serializer.is_valid(raise_exception=True)
             user = user_serializer.save()
-        profile_data = {k: v for k, v in validated_data.items() if k in ['name','employee_id', 'department', 'designation']}
+        profile_data = {k: v for k, v in validated_data.items() if k in ['name','employee_id', 'department', 'designation','profile_picture']}
         profile, created = AdminProfile.objects.get_or_create(user=user, defaults=profile_data)
         if not created:
             for key, value in profile_data.items():
@@ -180,7 +180,7 @@ class AdminSerializer(serializers.ModelSerializer):
         user_serializer = CustomUserSerializer(instance=instance.user, data=user_data, partial=True)
         user_serializer.is_valid(raise_exception=True)
         user = user_serializer.save()
-        profile_data = {k: v for k, v in validated_data.items() if k in ['name','employee_id', 'department', 'designation']}
+        profile_data = {k: v for k, v in validated_data.items() if k in ['name','employee_id', 'department', 'designation','profile_picture']}
         for key, value in profile_data.items():
             setattr(instance, key, value)
         instance.save()
@@ -331,13 +331,13 @@ class CourseLessonSerializer(serializers.ModelSerializer):
 class MacroplannerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Macroplanner
-        fields = ['id','week', 'duration', 'month', 'department', 'module']
+        fields = ['id','week', 'duration', 'month', 'department', 'module','mode']
 
 
 class MicroplannerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Microplanner
-        fields = ['id', 'month', 'week', 'days','department', 'no_of_sessions', 'name_of_topic']
+        fields = ['id', 'month', 'week', 'days','department', 'no_of_sessions', 'name_of_topic','mode']
 
 
 class AssessmentSerializer(serializers.ModelSerializer):
@@ -648,3 +648,14 @@ class ActiveUserSerializer(serializers.ModelSerializer):
 
     def get_full_name(self, obj):
         return obj.get_full_name() or f"{obj.first_name} {obj.last_name}".strip()
+    
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField(
+        required=True,
+        help_text="The email address of the user requesting a password reset."
+    )
+
+    def validate_email(self, value):
+        if not CustomUser.objects.filter(email=value).exists():
+            raise serializers.ValidationError("A user with this email does not exist.")
+        return value

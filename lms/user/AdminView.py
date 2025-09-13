@@ -31,6 +31,7 @@ from rest_framework.pagination import PageNumberPagination
 from django.core.exceptions import FieldDoesNotExist
 from quiz.models import Quiz
 from .utils import get_active_users
+from django.db.models import Case, When, Value, CharField, F, Q
 
 class AdminDashboardView(APIView):
     permission_classes = [IsAuthenticated]
@@ -127,7 +128,6 @@ class AdminCourseView(ListCreateAPIView):
         serializer.save(created_by=self.request.user, department=trainer.department)
 
 
-
 class AdminCourseLessonView(ListCreateAPIView):
     serializer_class = CourseLessonSerializer
     permission_classes = [IsAuthenticated]
@@ -145,44 +145,68 @@ class AdminCourseLessonView(ListCreateAPIView):
         serializer.save(created_by=self.request.user)
 
 
-class MacroplannerViewSet(viewsets.ModelViewSet):
+class AdminMacroplannerViewSet(viewsets.ModelViewSet):
     serializer_class = MacroplannerSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         try:
-            trainer = AdminProfile.objects.get(user=self.request.user)
-            return Macroplanner.objects.filter(department=trainer.department)
+            # Verify the user is an admin
+            AdminProfile.objects.get(user=self.request.user)
+            # Return all Macroplanner entries, not restricted to admin's department
+            return Macroplanner.objects.all()
         except AdminProfile.DoesNotExist:
-            raise PermissionDenied("Only trainers can access department-specific planners.")
+            raise PermissionDenied("Only admins can access macroplanners.")
 
     def perform_create(self, serializer):
-        trainer = AdminProfile.objects.get(user=self.request.user)
-        serializer.save(department=trainer.department)
+        try:
+            # Verify the user is an admin
+            AdminProfile.objects.get(user=self.request.user)
+            # Save with department from request data
+            serializer.save()
+        except AdminProfile.DoesNotExist:
+            raise PermissionDenied("Only admins can create macroplanners.")
 
     def perform_update(self, serializer):
-        trainer = AdminProfile.objects.get(user=self.request.user)
-        serializer.save(department=trainer.department)
+        try:
+            # Verify the user is an admin
+            AdminProfile.objects.get(user=self.request.user)
+            # Save with department from request data
+            serializer.save()
+        except AdminProfile.DoesNotExist:
+            raise PermissionDenied("Only admins can update macroplanners.")
 
 
-class MicroplannerViewSet(viewsets.ModelViewSet):
+class AdminMicroplannerViewSet(viewsets.ModelViewSet):
     serializer_class = MicroplannerSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         try:
-            trainer = AdminProfile.objects.get(user=self.request.user)
-            return Microplanner.objects.filter(department=trainer.department)
+            # Verify the user is an admin
+            AdminProfile.objects.get(user=self.request.user)
+            # Return all Microplanner entries, not restricted to admin's department
+            return Microplanner.objects.all()
         except AdminProfile.DoesNotExist:
-            raise PermissionDenied("Only trainers can access department-specific planners.")
+            raise PermissionDenied("Only admins can access microplanners.")
 
     def perform_create(self, serializer):
-        trainer = AdminProfile.objects.get(user=self.request.user)
-        serializer.save(department=trainer.department)
+        try:
+            # Verify the user is an admin
+            AdminProfile.objects.get(user=self.request.user)
+            # Save with department from request data
+            serializer.save()
+        except AdminProfile.DoesNotExist:
+            raise PermissionDenied("Only admins can create microplanners.")
 
     def perform_update(self, serializer):
-        trainer = AdminProfile.objects.get(user=self.request.user)
-        serializer.save(department=trainer.department)
+        try:
+            # Verify the user is an admin
+            AdminProfile.objects.get(user=self.request.user)
+            # Save with department from request data
+            serializer.save()
+        except AdminProfile.DoesNotExist:
+            raise PermissionDenied("Only admins can update microplanners.")
 
 
 class AssessmentListCreateView(ListCreateAPIView):
@@ -196,7 +220,7 @@ class AssessmentListCreateView(ListCreateAPIView):
         serializer.save(assigned_by=self.request.user)
 
 
-class TrainerAssessmentReportView(APIView):
+class AdminAssessmentReportView(APIView):
     permission_classes = [IsAuthenticated]
 
     # ---------- helpers ----------
@@ -380,34 +404,22 @@ class EvaluationRemarkView(ListCreateAPIView):
     def perform_create(self, serializer):
         serializer.save(trainer=self.request.user)
     
-class LMSEngagementView(ListAPIView):
+class AdminLMSEngagementView(ListAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = UserLoginActivitySerializer
 
-    def get_trainer_department(self):
-        try:
-            tp = AdminProfile.objects.get(user=self.request.user)
-        except AdminProfile.DoesNotExist:
-            raise NotFound("Trainer profile not found.")
-        # works whether department is a string or FK object
-        return tp.department
-
     def get_queryset(self):
-        dept = self.get_trainer_department()
+        # Collect usernames for ALL trainees and employees
+        trainee_usernames = TraineeProfile.objects.all().values_list("user__username", flat=True)
+        employee_usernames = EmployeeProfile.objects.all().values_list("user__username", flat=True)
 
-        # Collect usernames for BOTH trainees and employees in this department
-        trainee_usernames = TraineeProfile.objects.filter(
-            department=dept
-        ).values_list("user__username", flat=True)
-
-        employee_usernames = EmployeeProfile.objects.filter(
-            department=dept
-        ).values_list("user__username", flat=True)
-
+        # Combine and deduplicate usernames
         usernames = list(set(list(trainee_usernames) + list(employee_usernames)))
+        
         if not usernames:
             return UserLoginActivity.objects.none()
 
+        # Filter login activities by usernames and order by login_datetime
         qs = UserLoginActivity.objects.filter(
             login_username__in=usernames
         ).order_by("-login_datetime")
@@ -421,40 +433,128 @@ class LMSEngagementView(ListAPIView):
                 end = date(year + (mon == 12), (mon % 12) + 1, 1)
                 qs = qs.filter(login_datetime__gte=start, login_datetime__lt=end)
             except Exception:
-                # ignore bad month format or raise a ValidationError if you prefer
+                # Ignore bad month format (or raise ValidationError if preferred)
                 pass
 
         return qs
     
-
-class RecentActivityView(APIView):
+class AdminRecentActivityView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
         try:
             admin_obj = AdminProfile.objects.get(user=request.user)
-            department_instance = admin_obj.department
         except AdminProfile.DoesNotExist:
-            raise NotFound(detail="Mentor record not found for this user.")
+            raise NotFound(detail="Admin record not found for this user.")
         
-        # Cache key
+        # Cache key (optional, retained for potential caching)
         cache_key = f"recent_activity_{admin_obj.pk}"
 
-        students = EmployeeProfile.objects.filter(department=department_instance).only("user__username")
+        try:
+            # Collect usernames for ALL trainees and employees
+            trainee_usernames = TraineeProfile.objects.all().values_list("user__username", flat=True)
+            employee_usernames = EmployeeProfile.objects.all().values_list("user__username", flat=True)
+            usernames = list(set(list(trainee_usernames) + list(employee_usernames)))
 
-        recent_logins = UserLoginActivity.objects.filter(
-            login_username__in=students.values_list("user__username", flat=True)
-        ).annotate(
-            login_date=TruncDate("login_datetime")
-        ).values("login_username", "login_date").order_by("-login_datetime")[:5]
+            # Get unique departments
+            employee_depts = EmployeeProfile.objects.values_list("department", flat=True)
+            trainee_depts = TraineeProfile.objects.values_list("department", flat=True)
+            departments = list(set(list(employee_depts) + list(trainee_depts)))
 
-        response_data=({
-            "recent_activity": {
-                "recent_logins": list(recent_logins),
+            # Recent logins (last 5)
+            recent_logins = UserLoginActivity.objects.filter(
+                login_username__in=usernames,
+                status='S'
+            ).annotate(
+                truncated_login_date=TruncDate("login_datetime")
+            ).values(
+                "login_username",
+                login_date=F("truncated_login_date")
+            ).order_by("-login_datetime")[:5]
+
+            # Recent assessment submissions (last 5)
+            recent_assessments = AssessmentReport.objects.filter(
+                Q(audience='trainee') | Q(audience='employee'),
+                quiz__department__in=departments
+            ).annotate(
+                truncated_submission_date=TruncDate("last_updated"),
+                username=Case(
+                    When(audience='trainee', then=F('quiz__created_by__username')),
+                    When(audience='employee', then=F('quiz__created_by__username')),
+                    default=Value('Unknown'),
+                    output_field=CharField(),
+                )
+            ).values(
+                "username",
+                quiz_name=F("quiz__quiz_name"),
+                submission_date=F("truncated_submission_date")
+            ).order_by("-truncated_submission_date")[:5]
+
+            # Recent lesson completions (last 5)
+            employee_completions = EmployeeLessonCompletion.objects.filter(
+                employee__user__username__in=usernames,
+                completed=True
+            ).annotate(
+                truncated_completed_date=TruncDate("completed_at")
+            ).values(
+                username=F("employee__user__username"),
+                lesson_name=F("lesson__name"),
+                completed_date=F("truncated_completed_date")
+            ).order_by("-completed_at")[:5]
+
+            trainee_completions = TraineeLessonCompletion.objects.filter(
+                trainee__user__username__in=usernames,
+                completed=True
+            ).annotate(
+                truncated_completed_date=TruncDate("completed_at")
+            ).values(
+                username=F("trainee__user__username"),
+                lesson_name=F("lesson__name"),
+                completed_date=F("truncated_completed_date")
+            ).order_by("-completed_at")[:5]
+
+            recent_completions = sorted(
+                list(employee_completions) + list(trainee_completions),
+                key=lambda x: x["completed_date"] if x["completed_date"] else "0000-00-00",
+                reverse=True
+            )[:5]
+
+            # Recent queries raised (last 5)
+            recent_queries = Query.objects.filter(
+                raised_by__username__in=usernames
+            ).annotate(
+                truncated_created_date=TruncDate("created_at")
+            ).values(
+                username=F("raised_by__username"),
+                # question=F("question"),
+                created_date=F("truncated_created_date")
+            ).order_by("-created_at")[:5]
+
+            # Recent lesson plan/PPT uploads (last 5)
+            recent_uploads = CourseLesson.objects.filter(
+                created_by__username__in=TrainerProfile.objects.values_list("user__username", flat=True),
+                # Q(lesson_plans__isnull=False) | Q(lesson_ppt__isnull=False)
+            ).annotate(
+                truncated_upload_date=TruncDate("created_at")
+            ).values(
+                "lesson_name",
+                upload_date=F("truncated_upload_date")
+            ).order_by("-created_at")[:5]
+
+            response_data = {
+                "recent_activity": {
+                    "recent_logins": list(recent_logins),
+                    "recent_homework_submissions": list(recent_assessments),
+                    "recent_completions": list(recent_completions),
+                    "recent_queries": list(recent_queries),
+                    "recent_uploads": list(recent_uploads),
+                }
             }
-        })
 
-        return Response(response_data)
+            return Response(response_data)
+
+        except Exception as e:
+            return Response({"error": f"Unexpected error: {str(e)}"}, status=500)
 
 class TrainerQueryListAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -709,7 +809,7 @@ class TrainerNotifyView(APIView):
             status=200,
         )
 
-class TrainingReportView(viewsets.ViewSet):
+class AdminTrainingReportView(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
 
     def list(self, request):

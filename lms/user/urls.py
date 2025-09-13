@@ -1,6 +1,7 @@
 from django.urls import path,include
 from .views import (
-    RegistrationView,LoginView,UserLogoutView,DownloadUserTemplate,UploadUsersExcelView,mark_notification_read
+    RegistrationView,LoginView,UserLogoutView,DownloadUserTemplate,UploadUsersExcelView,mark_notification_read,PasswordResetRequestView,
+    PasswordResetConfirmView
 )
 from .TrainerView import (
     TrainerDashboardView, TrainerCourseView,TrainerCourseLessonView,MacroplannerViewSet, MicroplannerViewSet,AssessmentListCreateView,
@@ -20,13 +21,19 @@ from .EmployeeView import (
 )
 
 from .AdminView import (
-    AdminDashboardView,AdminCourseView,AdminCourseLessonView
+    AdminDashboardView,AdminCourseView,AdminCourseLessonView,AdminLMSEngagementView,AdminRecentActivityView,AdminMacroplannerViewSet,
+    AdminMicroplannerViewSet,AdminTrainingReportView,AdminAssessmentReportView
 )
 from rest_framework.routers import DefaultRouter
 
 router = DefaultRouter()
 router.register(r'trainer/macroplanners', MacroplannerViewSet, basename='trainer-macroplanner')
 router.register(r'trainer/microplanners', MicroplannerViewSet, basename='trainer-microplanner')
+
+router.register(r'custom_admin/macroplanners', AdminMacroplannerViewSet, basename='admin-macroplanner')
+router.register(r'custom_admin/microplanners', AdminMicroplannerViewSet, basename='admin-microplanner')
+
+router.register(r'trainer/training-report', TrainingReportView, basename='training-report')
 
 urlpatterns = [
     path('', include(router.urls)),
@@ -35,6 +42,8 @@ urlpatterns = [
     path('account/logout/', UserLogoutView.as_view(), name='logout'),
     path('account/upload/', UploadUsersExcelView.as_view(), name='upload_students_excel'),
     path('account/template/', DownloadUserTemplate.as_view(), name='download_students_template'),
+    path('account/password-reset/', PasswordResetRequestView.as_view(), name='password_reset_request'),
+    path('account/password-reset-confirm/<uidb64>/<token>/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
 
 
     #Trainer Urls
@@ -51,7 +60,7 @@ urlpatterns = [
     path('trainer/queries/<int:query_id>/response/', TrainerQueryResponseAPIView.as_view(), name='trainer-query-response'),
     path('trainer/queries/<int:query_id>/assign/', TrainerAssignTrainerAPIView.as_view(), name='trainer-query-assign'),
     path('trainer/mark-read/', mark_notification_read, name='trainee-mark-read'),
-    path('trainer/training-report/', TrainingReportView.as_view({'get': 'list'}), name='training-report'),
+    # path('trainer/training-report/', TrainingReportView.as_view({'get': 'list'}), name='training-report'),
     path('trainer/<str:username>/', TrainerDashboardView.as_view(), name='teacher-dashboard'),
 
     # Trainee Urls
@@ -93,5 +102,9 @@ urlpatterns = [
     # Admin Urls
     path('custom_admin/courses/', AdminCourseView.as_view(), name='courses'), 
     path('custom_admin/course-lessons/', AdminCourseLessonView.as_view(), name='course-lessons'),
+    path('custom_admin/lms-engagement/', AdminLMSEngagementView.as_view(), name='admin-lms-engagement'),
+    path('custom_admin/recent_activity/', AdminRecentActivityView.as_view(), name='admin_recent_activity'),
+    path('custom_admin/training-report/', AdminTrainingReportView.as_view({'get': 'list'}), name='admin-training-report'),
+    path('custom_admin/assessment-reports/', AdminAssessmentReportView.as_view(), name='admin-assessment-reports'),
     path('custom_admin/<str:username>', AdminDashboardView.as_view(), name='admin-dashboard'),
 ]

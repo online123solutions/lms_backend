@@ -59,9 +59,10 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_HOST_USER = 'shahnawaz.1504ali@gmail.com'
-EMAIL_HOST_PASSWORD = 'lfuu cfmq zmtd txgf'
+EMAIL_HOST_PASSWORD = 'lfuu cfmq zmtd txgf'  # Ensure this is the correct App Password
 EMAIL_USE_TLS = True
-DEFAULT_FROM_EMAIL = 'LMS <no-reply@lms.com>'
+DEFAULT_FROM_EMAIL = 'shahnawaz.1504ali@gmail.com' 
+EMAIL_TIMEOUT = 10  # Seconds
 
 # Redis for channels backend
 CHANNEL_LAYERS = {
@@ -69,6 +70,24 @@ CHANNEL_LAYERS = {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
             "hosts": [("127.0.0.1", 6379)],
+        },
+    },
+}
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'level': 'INFO',
+        },
+    },
+    'loggers': {
+        '': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': True,
         },
     },
 }

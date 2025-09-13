@@ -40,6 +40,7 @@ class TraineeProfile(models.Model):
     department = models.CharField(max_length=100)
     designation = models.CharField(max_length=100)
     trainer = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_trainees')
+    profile_picture = models.ImageField(upload_to='trainee_profiles/', default='default_profile.jpg', null=True, blank=True)
 
     def __str__(self):
         return f"Trainee: {self.user.username}"
@@ -56,6 +57,7 @@ class EmployeeProfile(models.Model):
     employee_id = models.CharField(max_length=20)
     department = models.CharField(max_length=100)
     designation = models.CharField(max_length=100)
+    profile_picture = models.ImageField(upload_to='employee_profiles/', default='default_profile.jpg', null=True, blank=True)
 
     def __str__(self):
         return f"Employee: {self.user.username}"
@@ -73,6 +75,8 @@ class TrainerProfile(models.Model):
     department = models.CharField(max_length=100)
     designation = models.CharField(max_length=100)
     expertise = models.TextField(blank=True)  # topics or designations they handle
+    profile_picture = models.ImageField(upload_to='trainer_profiles/', default='default_profile.jpg', null=True, blank=True)
+
 
     def __str__(self):
         return f"Trainer: {self.user.username}"
@@ -89,6 +93,7 @@ class AdminProfile(models.Model):
     employee_id = models.CharField(max_length=20)
     department = models.CharField(max_length=100)
     designation = models.CharField(max_length=100)
+    profile_picture = models.ImageField(upload_to='admin_profiles/', default='default_profile.jpg', null=True, blank=True)
 
     def __str__(self):
         return f"Admin: {self.user.username}"
@@ -187,11 +192,16 @@ class Macroplanner(models.Model):
         ('week 3', 'Week 3'),
         ('week 4', 'Week 4'),
     ]
+    MODE_CHOICES = [
+        ('Theoretical', 'Theoretical'),
+        ('Practical', 'Practical'),
+    ]
     duration= models.CharField(max_length=20, choices=duration_choices, default='1 Month')
     month=models.CharField(max_length=100,choices=MONTH_CHOICES)
     week=models.CharField(max_length=100,default="",choices=weeks)
     department=models.CharField(max_length=100,choices=Department)
     module=models.CharField(max_length=100,default="")
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES, default='Theoretical')
 
     def __str__(self):
         return f"Macroplanner - User: {self.department}, File: {self.month}"
@@ -204,12 +214,17 @@ class Microplanner(models.Model):
         ('Week 3', 'Week 3'),
         ('Week 4', 'Week 4'),
     ]
+    MODE_CHOICES = [
+        ('Theoretical', 'Theoretical'),
+        ('Practical', 'Practical'),
+    ]
     month = models.CharField(max_length=20, choices=MONTH_CHOICES)
     week= models.CharField(max_length=100, choices=weeks)
     days= models.CharField(max_length=100,default="")
     department=models.CharField(max_length=100,choices=Department)
     no_of_sessions = models.PositiveIntegerField(default="")
     name_of_topic = models.JSONField(default=list, blank=True, null=True)
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES, default='Theoretical')
 
     class Meta:
         verbose_name_plural = "Microplanners"

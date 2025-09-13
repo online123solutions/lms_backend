@@ -691,6 +691,48 @@ class TrainerNotifyView(APIView):
             status=200,
         )
 
+# class TrainingReportView(viewsets.ViewSet):
+#     permission_classes = [IsAuthenticated]
+
+#     def list(self, request):
+#         user = request.user  # CustomUser instance
+#         report_data = []
+
+#         if user.role == 'admin':
+#             users = CustomUser.objects.filter(Q(role='trainee') | Q(role='employee')).exclude(is_active=False)
+#         elif user.role == 'trainer':
+#             try:
+#                 trainees = TraineeProfile.objects.filter(trainer_id=user.id).values_list('user_id', flat=True)
+#                 users = CustomUser.objects.filter(
+#                     Q(id__in=trainees) | (Q(role='employee') & Q(id=user.id))
+#                 ).exclude(is_active=False)
+#             except Exception as e:
+#                 return Response({"error": f"Error fetching trainees: {str(e)}"}, status=status.HTTP500_INTERNAL_SERVER_ERROR)
+#         else:
+#             return Response({"error": "Unauthorized access"}, status=status.HTTP403_FORBIDDEN)
+
+#         for user_instance in users:
+#             completed_lessons = []
+#             profile = None
+#             if user_instance.role == 'trainee':
+#                 profile = TraineeProfile.objects.filter(user=user_instance).first()
+#                 if profile:
+#                     completed_lessons = TraineeLessonCompletion.objects.filter(trainee=profile)
+#             elif user_instance.role == 'employee':
+#                 profile = EmployeeProfile.objects.filter(user=user_instance).first()
+#                 if profile:
+#                     completed_lessons = EmployeeLessonCompletion.objects.filter(employee=profile)
+#             name = profile.name if profile else "N/A"
+#             serializer = TrainingReportSerializer({
+#                 'user_id': user_instance.id,
+#                 'username': user_instance.username,
+#                 'role': user_instance.role,
+#                 'name': name,
+#                 'completed_lessons': completed_lessons
+#             })
+#             report_data.append(serializer.data)
+
+#         return Response(report_data, status=status.HTTP_200_OK)
 class TrainingReportView(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
 
@@ -707,9 +749,9 @@ class TrainingReportView(viewsets.ViewSet):
                     Q(id__in=trainees) | (Q(role='employee') & Q(id=user.id))
                 ).exclude(is_active=False)
             except Exception as e:
-                return Response({"error": f"Error fetching trainees: {str(e)}"}, status=status.HTTP500_INTERNAL_SERVER_ERROR)
+                return Response({"error": f"Error fetching trainees: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         else:
-            return Response({"error": "Unauthorized access"}, status=status.HTTP403_FORBIDDEN)
+            return Response({"error": "Unauthorized access"}, status=status.HTTP_403_FORBIDDEN)
 
         for user_instance in users:
             completed_lessons = []
@@ -733,3 +775,61 @@ class TrainingReportView(viewsets.ViewSet):
             report_data.append(serializer.data)
 
         return Response(report_data, status=status.HTTP_200_OK)
+
+    def retrieve(self, request, pk=None):
+        """
+        Fetch the complete training report for a specific user.
+        """
+        user = request.user
+        try:
+            target_user = CustomUser.objects.get(id=pk)
+        except CustomUser.DoesNotExist:
+            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Authorization check
+        if user.role == 'admin':
+            pass  # Admin can view any user's report
+        elif user.role == 'trainer':
+            if target_user.role == 'trainee':
+                if not TraineeProfile.objects.filter(user=target_user, trainer_id=user.id).exists():
+                    return Response({"error": "Unauthorized access"}, status=status.HTTP_403_FORBIDDEN)
+            elif target_user.role == 'employee' and target_user.id != user.id:
+                return Response({"error": "Unauthorized access"}, status=status.HTTP_403_FORBIDDEN)
+        else:
+            return Response({"error": "Unauthorized access"}, status=status.HTTP_403_FORBIDDEN)
+
+        # Fetch detailed report
+        completed_lessons = []
+        profile = None
+        if target_user.role == 'trainee':
+            profile = TraineeProfile.objects.filter(user=target_user).first()
+            if profile:
+                completed_lessons = TraineeLessonCompletion.objects.filter(trainee=profile).select_related('lesson')
+        elif target_user.role == 'employee':
+            profile = EmployeeProfile.objects.filter(user=target_user).first()
+            if profile:
+                completed_lessons = EmployeeLessonCompletion.objects.filter(employee=profile).select_related('lesson')
+
+        name = profile.name if profile else "N/A"
+        detailed_report = {
+            'user_id': target_user.id,
+            'username': target_user.username,
+            'role': target_user.role,
+            'name': name,
+            'employee_id': getattr(profile, 'employee_id', 'N/A') if profile else 'N/A',
+            'department': getattr(profile, 'department', 'N/A') if profile else 'N/A',
+            'designation': getattr(profile, 'designation', 'N/A') if profile else 'N/A',
+            'trainer_name': getattr(profile, 'trainer__name', 'N/A') if profile and hasattr(profile, 'trainer') else 'N/A',
+            'completed_lessons': [
+                {
+                    'lesson_title': lesson.lesson.title,
+                    'completed': lesson.completed,
+                    'completed_at': lesson.completed_at,
+                    'duration': lesson.duration if hasattr(lesson, 'duration') else 'N/A',
+                    'score': lesson.score if hasattr(lesson, 'score') else 'N/A'
+                } for lesson in completed_lessons
+            ]
+        }
+
+        serializer = TrainingReportSerializer(detailed_report)
+        return Response(serializer.data, status=status.HTTP_200_OK)
