@@ -5,6 +5,10 @@ ALLOWED_HOSTS = ['lms.steel.study', 'steel.study', '127.0.0.1', 'localhost']
 
 DEBUG=False
 
+# at the bottom is fine
+STATIC_URL = "static/"
+STATIC_ROOT = "/opt/myapi/lms_backend/lms/staticfiles"
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql_psycopg2',
@@ -65,3 +69,7 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'shahnawaz.1504ali@gmail.com'
 EMAIL_HOST_PASSWORD = 'lfuu cfmq zmtd txgf'  # Use App Password for Gmail
 DEFAULT_FROM_EMAIL = 'shahnawaz.1504ali@gmail.com'
+
+# ---- static config (explicit absolute path) ----
+STATIC_URL = "static/"
+STATIC_ROOT = "/opt/myapi/lms_backend/lms/staticfiles"
