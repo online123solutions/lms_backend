@@ -1,7 +1,8 @@
 from .base import *
 from pathlib import Path
 
-ALLOWED_HOSTS = ['139.59.81.107']
+ALLOWED_HOSTS = ['lms.steel.study', 'steel.study', '127.0.0.1', 'localhost']
+
 DEBUG=False
 
 DATABASES = {
@@ -29,10 +30,16 @@ SWAGGER_SETTINGS = {
 
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:3000',
+    "https://lmsfrontend-ki924.ondigitalocean.app",
+    "https://steel.study",
+    "https://www.steel.study"
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:3000',
+    "https://lmsfrontend-ki924.ondigitalocean.app",
+    "https://steel.study",
+    "https://www.steel.study"
 ]
 
 SECURE_CROSS_ORIGIN_OPENER_POLICY = None

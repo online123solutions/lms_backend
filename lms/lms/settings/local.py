@@ -18,32 +18,16 @@ DATABASES = {
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  
     "http://127.0.0.1:3000",
+    "https://lmsfrontend-ki924.ondigitalocean.app"
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",  
     "http://127.0.0.1:3000",
+    "https://lmsfrontend-ki924.ondigitalocean.app"
 ]
 
-# CORS_ALLOW_METHODS = [
-#     "GET",
-#     "POST",
-#     "PUT",
-#     "PATCH",
-#     "DELETE",
-#     "OPTIONS"
-# ]
-
 CORS_ALLOW_CREDENTIALS = True
-
-# from corsheaders.defaults import default_headers
-
-# CORS_ALLOW_HEADERS = list(default_headers) + [
-#     "authorization",
-#     "x-csrftoken",
-#     "x-requested-with",
-# ]
-
 
 CSRF_COOKIE_SECURE = False
 SESSION_COOKIE_SECURE = False
