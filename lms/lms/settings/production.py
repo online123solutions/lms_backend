@@ -9,6 +9,9 @@ DEBUG=False
 STATIC_URL = "static/"
 STATIC_ROOT = "/opt/myapi/lms_backend/lms/staticfiles"
 
+MEDIA_URL = "/media/"
+MEDIA_ROOT = "/opt/myapi/lms_backend/lms/media"
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql_psycopg2',
