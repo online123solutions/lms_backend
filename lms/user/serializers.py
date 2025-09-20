@@ -586,9 +586,9 @@ class SentNotificationSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-
 class LessonCompletionSerializer(serializers.Serializer):
-    lesson_title = serializers.CharField(source='lesson.name')
+    # Lesson has "name", not "title"
+    lesson_title = serializers.CharField(source='lesson.name', allow_null=True, required=False)
     completed_at = serializers.DateTimeField()
     completed = serializers.BooleanField()
 
@@ -610,17 +610,15 @@ class TrainingReportSerializer(serializers.Serializer):
             profile = TraineeProfile.objects.filter(user_id=instance.get('user_id')).first()
         elif instance.get('role') == 'employee':
             profile = EmployeeProfile.objects.filter(user_id=instance.get('user_id')).first()
+
         if profile:
-            data['name'] = profile.name if profile.name else data.get('name', "N/A")
-            data['employee_id'] = profile.employee_id if profile.employee_id else data.get('employee_id', "N/A")
-            data['department'] = profile.department if profile.department else data.get('department', "N/A")
-            data['designation'] = profile.designation if profile.designation else data.get('designation', "N/A")
-            if hasattr(profile, 'trainer'):
-                trainer = profile.trainer
-                # Use username as fallback, or combine first_name and last_name if available
-                data['trainer_name'] = trainer.username if trainer else data.get('trainer_name', "N/A")
-                # Uncomment the following line if you have first_name and last_name in CustomUser
-                # data['trainer_name'] = f"{trainer.first_name} {trainer.last_name}" if trainer and trainer.first_name and trainer.last_name else data.get('trainer_name', "N/A")
+            data['name'] = profile.name or data.get('name', "N/A")
+            data['employee_id'] = getattr(profile, 'employee_id', None) or data.get('employee_id', "N/A")
+            data['department'] = getattr(profile, 'department', None) or data.get('department', "N/A")
+            data['designation'] = getattr(profile, 'designation', None) or data.get('designation', "N/A")
+            # safe nested getattr for trainer name
+            trainer = getattr(profile, 'trainer', None)
+            data['trainer_name'] = getattr(trainer, 'name', None) or getattr(trainer, 'username', None) or data.get('trainer_name', "N/A")
         return data
     
 class ActiveUserSerializer(serializers.ModelSerializer):

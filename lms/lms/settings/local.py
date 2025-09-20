@@ -3,7 +3,7 @@ from decouple import config
 from corsheaders.defaults import default_headers
 
 
-ALLOWED_HOSTS = ['localhost','127.0.0.1']
+ALLOWED_HOSTS = ['localhost','127.0.0.1','lms.steel.study']
 
 DEBUG=True
 
