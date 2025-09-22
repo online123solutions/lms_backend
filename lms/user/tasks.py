@@ -73,7 +73,7 @@ def send_password_reset_email(email):
         user = CustomUser.objects.get(email=email)
         token = default_token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
-        reset_link = f"http://127.0.0.1:8000/account/password-reset-confirm/{uid}/{token}/"
+        reset_link = f"https://lms.study.steel/account/password-reset-confirm/{uid}/{token}/"
         logger.info(f"Generated reset link: {reset_link}")  # Log the generated link
         subject = "Password Reset Request"
         message = f"Use this link to reset your password: {reset_link}"
@@ -85,7 +85,6 @@ def send_password_reset_email(email):
             recipient_list=[email],
             fail_silently=False
         )
-        logger.info(f"Email sent successfully to {email}")
         return f"✅ Password reset email sent to {email}"
     except CustomUser.DoesNotExist:
         return f"User with email {email} does not exist"
