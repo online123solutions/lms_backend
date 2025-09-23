@@ -56,8 +56,8 @@ class TrainerDashboardView(APIView):
         course_count = courses.count()
 
         # Active users in the trainer's department
-        active_users = get_active_users(department) if department else CustomUser.objects.none()
-        active_users_data = ActiveUserSerializer(active_users, many=True).data
+        active_users = get_active_users(department).select_related("trainee_profile", "employee_profile")
+        data = ActiveUserSerializer(active_users, many=True).data
         active_count = active_users.count()
 
         return Response({
@@ -66,7 +66,7 @@ class TrainerDashboardView(APIView):
             "course_count": course_count,
             "courses": list(courses.values("course_id", "course_name", "department", "is_approved")),
             "active_count": active_count,
-            "active_users": active_users_data,
+            "active_users": data,
         }, status=200)
 
 

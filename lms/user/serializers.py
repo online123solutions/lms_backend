@@ -117,7 +117,7 @@ class TrainerSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TrainerProfile
-        fields = ['user','name', 'employee_id', 'department', 'designation', 'expertise']
+        fields = ['user','name', 'employee_id', 'department', 'designation', 'expertise','profile_picture']
 
     def create(self, validated_data):
         user_data = validated_data.pop('user')
@@ -621,31 +621,49 @@ class TrainingReportSerializer(serializers.Serializer):
             data['trainer_name'] = getattr(trainer, 'name', None) or getattr(trainer, 'username', None) or data.get('trainer_name', "N/A")
         return data
     
+
 class ActiveUserSerializer(serializers.ModelSerializer):
     profile_type = serializers.SerializerMethodField()
-    department = serializers.SerializerMethodField()
-    full_name = serializers.SerializerMethodField()
+    department   = serializers.SerializerMethodField()
+    full_name    = serializers.SerializerMethodField()
 
     class Meta:
-        model = CustomUser
-        fields = ['id', 'username', 'full_name', 'email', 'profile_type', 'department']
+        model  = CustomUser
+        fields = ["id", "username", "full_name", "email", "profile_type", "department"]
+
+    def _profiles(self, obj):
+        """Helper to avoid repeating getattr calls."""
+        tp = getattr(obj, "trainee_profile", None)
+        ep = getattr(obj, "employee_profile", None)
+        return tp, ep
 
     def get_profile_type(self, obj):
-        if hasattr(obj, 'traineeprofile') and obj.trainee_profile:
-            return 'Trainee'
-        elif hasattr(obj, 'employeeprofile') and obj.employee_profile:
-            return 'Employee'
-        return 'Unknown'
+        tp, ep = self._profiles(obj)
+        if tp is not None:
+            return "Trainee"
+        if ep is not None:
+            return "Employee"
+        return "Unknown"
 
     def get_department(self, obj):
-        if hasattr(obj, 'trainee_profile') and obj.trainee_profile:
-            return obj.trainee_profile.department
-        elif hasattr(obj, 'employee_profile') and obj.employee_profile:
-            return obj.employee_profile.department
-        return None
+        tp, ep = self._profiles(obj)
+        if tp and getattr(tp, "department", None):
+            return tp.department
+        if ep and getattr(ep, "department", None):
+            return ep.department
+        return ""
 
     def get_full_name(self, obj):
-        return obj.get_full_name() or f"{obj.first_name} {obj.last_name}".strip()
+        tp, ep = self._profiles(obj)
+
+        # Priority: profile.name → Django's full name → first/last → username
+        name = (
+            (getattr(tp, "name", "") or "").strip()
+            or (getattr(ep, "name", "") or "").strip()
+            or (getattr(obj, "get_full_name", lambda: "")() or "").strip()
+            or " ".join(filter(None, [getattr(obj, "first_name", ""), getattr(obj, "last_name", "")])).strip()
+        )
+        return name or obj.username
     
 class PasswordResetRequestSerializer(serializers.Serializer):
     email = serializers.EmailField(
