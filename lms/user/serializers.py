@@ -117,7 +117,35 @@ class TrainerSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TrainerProfile
-        fields = ['user','name', 'employee_id', 'department', 'designation', 'expertise','profile_picture']
+        fields = [
+            'user', 'name', 'employee_id', 'department',
+            'designation', 'expertise', 'profile_picture',
+        ]
+        # Nothing else needed; keep profile_picture writable
+
+    def to_representation(self, instance):
+        """
+        Keep your normal representation but ensure profile_picture
+        is an ABSOLUTE URL in responses.
+        """
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+
+        # instance.profile_picture may be a FileField/ImageField or empty
+        pic = getattr(instance, "profile_picture", None)
+        try:
+            # .url gives something like "/media/trainer_profiles/ablox.png"
+            url = pic.url if pic else ""
+        except Exception:
+            url = ""
+
+        if url and request is not None:
+            data["profile_picture"] = request.build_absolute_uri(url)
+        else:
+            # If no request in context, leave it as relative or blank
+            data["profile_picture"] = url or ""
+
+        return data
 
     def create(self, validated_data):
         user_data = validated_data.pop('user')
@@ -130,7 +158,10 @@ class TrainerSerializer(serializers.ModelSerializer):
             user_serializer = CustomUserSerializer(instance=user, data=user_data, partial=True)
             user_serializer.is_valid(raise_exception=True)
             user = user_serializer.save()
-        profile_data = {k: v for k, v in validated_data.items() if k in ['name','employee_id', 'department', 'designation', 'expertise','profile_picture']}
+
+        profile_fields = ['name','employee_id','department','designation','expertise','profile_picture']
+        profile_data = {k: v for k, v in validated_data.items() if k in profile_fields}
+
         profile, created = TrainerProfile.objects.get_or_create(user=user, defaults=profile_data)
         if not created:
             for key, value in profile_data.items():
@@ -139,13 +170,16 @@ class TrainerSerializer(serializers.ModelSerializer):
         return profile
 
     def update(self, instance, validated_data):
-        user_data = validated_data.pop('user')
-        user_serializer = CustomUserSerializer(instance=instance.user, data=user_data, partial=True)
-        user_serializer.is_valid(raise_exception=True)
-        user = user_serializer.save()
-        profile_data = {k: v for k, v in validated_data.items() if k in ['name','employee_id', 'department', 'designation', 'expertise','profile_picture']}
-        for key, value in profile_data.items():
-            setattr(instance, key, value)
+        user_data = validated_data.pop('user', None)
+        if user_data:
+            user_serializer = CustomUserSerializer(instance=instance.user, data=user_data, partial=True)
+            user_serializer.is_valid(raise_exception=True)
+            user_serializer.save()
+
+        profile_fields = ['name','employee_id','department','designation','expertise','profile_picture']
+        for key, value in validated_data.items():
+            if key in profile_fields:
+                setattr(instance, key, value)
         instance.save()
         return instance
     
