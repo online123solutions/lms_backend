@@ -933,3 +933,196 @@ class AdminTrainingReportView(viewsets.ViewSet):
         data = self._build_detailed_report(target_user)
         serializer = TrainingReportSerializer(data)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+
+class SmallPageNumberPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = "page_size"
+    max_page_size = 200
+
+BULK_CHUNK = 2000  # tune to your DB
+
+class AdminNotifyView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get(self, request):
+        # Same auth gate as POST
+        role = getattr(request.user, "role", None)
+        if role != "trainer" and not request.user.is_staff:
+            return Response({"error": "Only trainers can view their sent notifications."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        qs = (
+            Notification.objects.filter(sent_by=request.user)
+            .annotate(recipients_count=Count("notificationreceipt", distinct=True))
+        )
+
+        # --- Filters ---
+        search = (request.query_params.get("search") or "").strip()
+        if search:
+            qs = qs.filter(
+                Q(subject__icontains=search)
+                | Q(message__icontains=search)
+                | Q(link__icontains=search)
+            )
+
+        date_from = (request.query_params.get("date_from") or "").strip()
+        date_to = (request.query_params.get("date_to") or "").strip()
+        # filter only if your Notification has created_at (adjust if different)
+        if date_from:
+            qs = qs.filter(created_at__date__gte=date_from)
+        if date_to:
+            qs = qs.filter(created_at__date__lte=date_to)
+
+        qs = qs.order_by("-created_at", "-id")  # safe even if created_at ties
+
+        paginator = SmallPageNumberPagination()
+        page = paginator.paginate_queryset(qs, request)
+        ser = SentNotificationSerializer(page, many=True)
+        return paginator.get_paginated_response(ser.data)
+
+
+    @swagger_auto_schema(
+        operation_description="""
+        Send notifications (Trainer → Employees/Trainees).
+
+        Modes:
+        - individual: pass `usernames` (list of usernames; employees and/or trainees)
+        - group:
+            audience: employee | trainee | both
+            department (optional, employees only; defaults to trainer's department if available)
+        """,
+        request_body=TrainerNotificationRequestSerializer,
+        responses={200: openapi.Response("OK"), 400: "Bad Request", 403: "Forbidden", 404: "Not Found"}
+    )
+    def post(self, request):
+        # ✅ Only trainers (or staff, if you allow) can send
+        role = getattr(request.user, "role", None)
+        if role != "trainer" and not request.user.is_staff:
+            return Response({"error": "Only trainers can send notifications."}, status=status.HTTP_403_FORBIDDEN)
+
+        ser = TrainerNotificationRequestSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+
+        subject    = data["subject"].strip()
+        message    = data["message"].strip()
+        link       = (data.get("link") or "").strip() or None
+        notif_type = data["notification_type"]
+        mode       = data["mode"]
+        audience   = data["audience"]          # employee | trainee | both
+        dept_arg   = (data.get("department") or "").strip() or None
+
+        # Get trainer dept (fallback)
+        trainer_dept = None
+        try:
+            tp = TrainerProfile.objects.only("department").get(user=request.user)
+            trainer_dept = tp.department
+        except TrainerProfile.DoesNotExist:
+            pass
+
+        # ---------- Build recipients ----------
+        base_q = Q(is_active=True)
+        role_q = Q()
+
+        if mode == "individual":
+            usernames = data.get("usernames") or []
+            if not usernames:
+                return Response({"error": "`usernames` is required for individual mode."}, status=400)
+
+            # normalize + dedupe
+            usernames = list({str(u).strip() for u in usernames if str(u).strip()})
+            if not usernames:
+                return Response({"error": "No valid usernames provided."}, status=400)
+
+            # Optionally enforce audience subset:
+            # if audience != "both":
+            #     role_q = Q(role=("employee" if audience == "employee" else "trainee"))
+
+            qs = CustomUser.objects.filter(base_q, Q(username__in=usernames)).only("id", "email", "role")
+        elif mode == "group":
+            if audience in ("employee", "both"):
+                if dept_arg:
+                    role_q |= Q(role="employee", employee_profile__department=dept_arg)
+                elif trainer_dept:
+                    role_q |= Q(role="employee", employee_profile__department=trainer_dept)
+                else:
+                    role_q |= Q(role="employee")
+
+            if audience in ("trainee", "both"):
+                role_q |= Q(role="trainee")
+
+            if role_q.children == []:
+                return Response({"error": "Invalid audience for group mode."}, status=400)
+
+            qs = CustomUser.objects.filter(base_q & role_q).only("id", "email", "role")
+        else:
+            return Response({"error": "Invalid mode. Use 'individual' or 'group'."}, status=400)
+
+        # Exclude sender & dedupe
+        qs = qs.exclude(id=request.user.id).distinct()
+
+        # Pull ids/emails without materializing full objects
+        recipients = list(qs.values_list("id", "email", "role"))
+        if not recipients:
+            return Response({"error": "No matching recipients found."}, status=404)
+
+        ids    = [r[0] for r in recipients]
+        emails = [r[1] for r in recipients if r[1]]
+        roles  = [r[2] for r in recipients]
+
+        emp_count = sum(1 for r in roles if r == "employee")
+        trn_count = sum(1 for r in roles if r == "trainee")
+
+        # ---------- Write + side-effects ----------
+        with transaction.atomic():
+            notif = Notification.objects.create(
+                subject=subject,
+                message=message,
+                link=link,
+                notification_type=notif_type,
+                sent_by=request.user,
+            )
+
+            # Bulk receipts in chunks (better on large sends)
+            from itertools import islice
+            def chunks(seq, n):
+                it = iter(seq)
+                while True:
+                    batch = list(islice(it, n))
+                    if not batch:
+                        break
+                    yield batch
+
+            for batch_ids in chunks(ids, BULK_CHUNK):
+                NotificationReceipt.objects.bulk_create(
+                    [NotificationReceipt(notification=notif, user_id=u) for u in batch_ids],
+                    ignore_conflicts=True,
+                )
+
+        # Async side effects (use your Celery tasks)
+        # 1) Push in one go by ids (your task already takes list of ids)
+        try:
+            send_push_notification.delay(ids, subject, message)
+        except Exception:
+            pass  # don't break the response on side-effect failures
+
+        # 2) Fan out emails as individual tasks (or implement a batched task)
+        for e in emails:
+            try:
+                send_notification_email.delay(e, subject, message)
+            except Exception:
+                continue
+
+        return Response(
+            {
+                "message": f"Notification sent to {len(ids)} user(s).",
+                "notification_id": notif.id,
+                "counts": {"employees": emp_count, "trainees": trn_count},
+                "audience": audience,
+                "mode": mode,
+                "department_scope": dept_arg or trainer_dept or None,
+            },
+            status=200,
+        )

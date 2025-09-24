@@ -22,7 +22,7 @@ from .EmployeeView import (
 
 from .AdminView import (
     AdminDashboardView,AdminCourseView,AdminCourseLessonView,AdminLMSEngagementView,AdminRecentActivityView,AdminMacroplannerViewSet,
-    AdminMicroplannerViewSet,AdminTrainingReportView,AdminAssessmentReportView
+    AdminMicroplannerViewSet,AdminTrainingReportView,AdminAssessmentReportView,AdminNotifyView
 )
 from rest_framework.routers import DefaultRouter
 
@@ -107,5 +107,6 @@ urlpatterns = [
     path('custom_admin/recent_activity/', AdminRecentActivityView.as_view(), name='admin_recent_activity'),
     path('custom_admin/training-report/', AdminTrainingReportView.as_view({'get': 'list'}), name='admin-training-report'),
     path('custom_admin/assessment-reports/', AdminAssessmentReportView.as_view(), name='admin-assessment-reports'),
+    path('custom_admin/notifications/send/', AdminNotifyView.as_view(), name='admin-send-notification'),
     path('custom_admin/<str:username>', AdminDashboardView.as_view(), name='admin-dashboard'),
 ]
