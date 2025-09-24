@@ -34,6 +34,7 @@ router.register(r'custom_admin/macroplanners', AdminMacroplannerViewSet, basenam
 router.register(r'custom_admin/microplanners', AdminMicroplannerViewSet, basename='admin-microplanner')
 
 router.register(r'trainer/training-report', TrainingReportView, basename='training-report')
+router.register(r'custom_admin/training-report', AdminTrainingReportView, basename='admin-training-report')
 
 urlpatterns = [
     path('', include(router.urls)),
