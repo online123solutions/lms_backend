@@ -949,8 +949,8 @@ class AdminNotifyView(APIView):
     def get(self, request):
         # Same auth gate as POST
         role = getattr(request.user, "role", None)
-        if role != "trainer" and not request.user.is_staff:
-            return Response({"error": "Only trainers can view their sent notifications."},
+        if role != "admin" and not request.user.is_staff:
+            return Response({"error": "Only admin can view their sent notifications."},
                             status=status.HTTP_403_FORBIDDEN)
 
         qs = (
@@ -997,10 +997,9 @@ class AdminNotifyView(APIView):
         responses={200: openapi.Response("OK"), 400: "Bad Request", 403: "Forbidden", 404: "Not Found"}
     )
     def post(self, request):
-        # ✅ Only trainers (or staff, if you allow) can send
         role = getattr(request.user, "role", None)
-        if role != "trainer" and not request.user.is_staff:
-            return Response({"error": "Only trainers can send notifications."}, status=status.HTTP_403_FORBIDDEN)
+        if role != "admin" and not request.user.is_staff:
+            return Response({"error": "Only admin can send notifications."}, status=status.HTTP_403_FORBIDDEN)
 
         ser = TrainerNotificationRequestSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
@@ -1017,9 +1016,9 @@ class AdminNotifyView(APIView):
         # Get trainer dept (fallback)
         trainer_dept = None
         try:
-            tp = TrainerProfile.objects.only("department").get(user=request.user)
+            tp = AdminProfile.objects.only("department").get(user=request.user)
             trainer_dept = tp.department
-        except TrainerProfile.DoesNotExist:
+        except AdminProfile.DoesNotExist:
             pass
 
         # ---------- Build recipients ----------
