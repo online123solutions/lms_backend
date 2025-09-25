@@ -471,7 +471,7 @@ class TraineeMicroplannerListAPIView(APIView):
         # Fetch microplanners for trainee's department
         qs = (
             Microplanner.objects
-            .filter(department=trainee.department)
+            .filter(department=trainee.department,role=request.user.role)
             .order_by("-id")  # or "-created_at" if available
         )
 
