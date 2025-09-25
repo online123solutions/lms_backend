@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from .models import (
     CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile,AdminProfile,Courses, CourseLesson,Macroplanner,Microplanner,Assessment, AssessmentReport,EvaluationRemark
-    ,TrainingReport,UserLoginActivity,Query,QueryResponse,Subject,Lesson,Notification,NotificationReceipt,SOP
+    ,TrainingReport,UserLoginActivity,Query,QueryResponse,Subject,Lesson,Notification,NotificationReceipt,SOP,StandardLibraryItem
 )
 from django.contrib.auth import authenticate
 from quiz.serializers import ResultSerializer
@@ -754,3 +754,65 @@ class SOPSerializer(serializers.ModelSerializer):
                 sop.recipients.set(users)
         # GROUP recipients are matched dynamically in the list views
         return sop
+    
+class TagsField(serializers.Field):
+    """
+    Accepts either:
+      - ["policy", "onboarding"]  (list of strings)
+      - "policy, onboarding"      (comma-separated string)
+    Stores as a list (JSONField on the model).
+    """
+    def to_representation(self, value):
+        # ensure we always expose a list
+        return list(value or [])
+
+    def to_internal_value(self, data):
+        if data is None:
+            return []
+        if isinstance(data, (list, tuple)):
+            try:
+                return [str(x).strip() for x in data if str(x).strip()]
+            except Exception:
+                raise serializers.ValidationError("tags must be strings.")
+        if isinstance(data, str):
+            return [s.strip() for s in data.split(",") if s.strip()]
+        raise serializers.ValidationError("tags must be a list of strings or a comma-separated string.")
+
+
+class StandardLibraryItemSerializer(serializers.ModelSerializer):
+    # Optional: flexible tags input
+    tags = TagsField(required=False)
+
+    class Meta:
+        model = StandardLibraryItem
+        fields = [
+            "id", "title", "note",
+            "department", "target_role",
+            "file", "tags", "is_active",
+            "created_by", "created_at",
+        ]
+        read_only_fields = ("created_by", "created_at")
+
+    def validate(self, attrs):
+        """
+        Library items can be global (no department/role),
+        or targeted by department and/or role.
+        No extra checks needed unless you want to enforce at least one.
+        """
+        # Example if you ever want to force at least one target:
+        # if not attrs.get("department") and not attrs.get("target_role"):
+        #     raise serializers.ValidationError("Provide department and/or target_role, or leave both blank for global.")
+        return attrs
+
+    def create(self, validated_data):
+        request = self.context.get("request")
+        if request and request.user and request.user.is_authenticated:
+            validated_data["created_by"] = request.user
+        # ensure tags key exists (JSONField default is [], but be explicit)
+        validated_data.setdefault("tags", [])
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        # keep created_by unchanged
+        validated_data.pop("created_by", None)
+        return super().update(instance, validated_data)

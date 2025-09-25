@@ -31,6 +31,7 @@ from rest_framework.pagination import PageNumberPagination
 from django.core.exceptions import FieldDoesNotExist
 from quiz.models import Quiz
 from .utils import get_active_users
+from .views import BaseSLListView,BaseSOPListView
 
 class TrainerDashboardView(APIView):
     permission_classes = [IsAuthenticated]
@@ -957,3 +958,9 @@ class TrainingReportView(viewsets.ViewSet):
         data = self._build_detailed_report(target_user)
         serializer = TrainingReportSerializer(data)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+class TrainerLibraryListView(BaseSLListView):
+    required_role = "trainer"
+
+class TrainerSOPListView(BaseSOPListView):
+    REQUIRED_ROLE = "trainer"

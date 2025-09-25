@@ -6,24 +6,24 @@ from .views import (
 from .TrainerView import (
     TrainerDashboardView, TrainerCourseView,TrainerCourseLessonView,MacroplannerViewSet, MicroplannerViewSet,AssessmentListCreateView,
     TrainerAssessmentReportView,AssessmentReportUpdateView,EvaluationRemarkView,TrainingReportView,LMSEngagementView,RecentActivityView,
-    TrainerQueryListAPIView, TrainerQueryResponseAPIView, TrainerAssignTrainerAPIView,TrainerNotifyView
+    TrainerQueryListAPIView, TrainerQueryResponseAPIView, TrainerAssignTrainerAPIView,TrainerNotifyView,TrainerSOPListView,TrainerLibraryListView
 )
 
 from .TraineeView import (
     SubjectListAPIView, LessonListAPIView, LessonDetailAPIView,TraineeDashboardView,AvailableQuizListAPIView,TraineeQueryCreateAPIView,
     TraineeQueryListAPIView,TraineeQueryResponseAPIView,ContentStartView, ContentEndView,TraineeMacroplannerListAPIView,TraineeMicroplannerListAPIView,
-    TraineeLoginActivityAPIView,TraineeNotificationsView,TraineeSOPListView
+    TraineeLoginActivityAPIView,TraineeNotificationsView,TraineeSOPListView,TraineeLibraryListView
 )
 
 from .EmployeeView import (
     EmployeeDashboardView,EmployeeAvailableQuizListAPIView,EmployeeQueryCreateAPIView,EmployeeQueryListAPIView,EmployeeQueryResponseAPIView,
     EmployeeMacroplannerListAPIView,EmployeeMicroplannerListAPIView,EmployeeLoginActivityAPIView,EmployeeNotificationsView,MarkLessonCompletedAPIView,
-    EmployeeSOPListView
+    EmployeeSOPListView,EmployeeLibraryListView
 )
 
 from .AdminView import (
     AdminDashboardView,AdminCourseView,AdminCourseLessonView,AdminLMSEngagementView,AdminRecentActivityView,AdminMacroplannerViewSet,
-    AdminMicroplannerViewSet,AdminTrainingReportView,AdminAssessmentReportView,AdminNotifyView,AdminSOPListView
+    AdminMicroplannerViewSet,AdminTrainingReportView,AdminAssessmentReportView,AdminNotifyView,AdminSOPListView,AdminLibraryListView
 )
 from rest_framework.routers import DefaultRouter
 
@@ -63,6 +63,8 @@ urlpatterns = [
     path('trainer/queries/<int:query_id>/assign/', TrainerAssignTrainerAPIView.as_view(), name='trainer-query-assign'),
     path('trainer/mark-read/', mark_notification_read, name='trainee-mark-read'),
     # path('trainer/training-report/', TrainingReportView.as_view({'get': 'list'}), name='training-report'),
+    path('trainer/sops/', TrainerSOPListView.as_view(), name='trainer-sops'),
+    path('trainer/library/', TrainerLibraryListView.as_view(), name='trainer-library'),
     path('trainer/<str:username>/', TrainerDashboardView.as_view(), name='teacher-dashboard'),
 
     # Trainee Urls
@@ -79,6 +81,7 @@ urlpatterns = [
     path('trainee/mark-read/', mark_notification_read, name='trainee-mark-read'),
     path('trainee/lessons/<slug:lesson_slug>/complete/', MarkLessonCompletedAPIView.as_view(), name='mark-lesson-completed'),
     path('trainee/sops/', TraineeSOPListView.as_view(), name='trainee-sops'),
+    path('trainee/library/', TraineeLibraryListView.as_view(), name='trainee-library'),
     path('trainee/<str:username>/', TraineeDashboardView.as_view(), name='trainee-dashboard'),
 
     # Employee Urls
@@ -95,6 +98,7 @@ urlpatterns = [
     path('employee/mark-read/', mark_notification_read, name='employee-mark-read'),
     path('employee/lessons/<slug:lesson_slug>/complete/', MarkLessonCompletedAPIView.as_view(), name='mark-lesson-completed'),
     path('employee/sops/', EmployeeSOPListView.as_view(), name='employee-sops'),
+    path('employee/library/', EmployeeLibraryListView.as_view(), name='employee-library'),
     path('employee/<str:username>/', EmployeeDashboardView.as_view(), name='employee-dashboard'),
 
 
@@ -112,5 +116,6 @@ urlpatterns = [
     path('custom_admin/assessment-reports/', AdminAssessmentReportView.as_view(), name='admin-assessment-reports'),
     path('custom_admin/notifications/send/', AdminNotifyView.as_view(), name='admin-send-notification'),
     path("custom_admin/sops/", AdminSOPListView.as_view(),    name="sops-admin"),
+    path("custom_admin/library/", AdminLibraryListView.as_view(),    name="library-admin"),
     path('custom_admin/<str:username>', AdminDashboardView.as_view(), name='admin-dashboard'),
 ]

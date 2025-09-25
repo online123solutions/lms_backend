@@ -3,10 +3,10 @@ from rest_framework.response import Response
 from rest_framework import status
 from .serializers import (
     TraineeSerializer, EmployeeSerializer, TrainerSerializer, AdminSerializer, LoginSerializer,UserExcelUploadSerializer,PasswordResetRequestSerializer,
-    SOPSerializer
+    SOPSerializer,StandardLibraryItemSerializer
 )
 from .models import (
-    CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile, AdminProfile,NotificationReceipt,SOP
+    CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile, AdminProfile,NotificationReceipt,SOP,StandardLibraryItem
 )
 from .tasks import send_welcome_email,send_password_reset_email
 from drf_yasg.utils import swagger_auto_schema
@@ -398,3 +398,69 @@ class BaseSOPListView(ListAPIView):
             .order_by("-created_at")
             .distinct()
         )
+
+class BaseSLListView(ListAPIView):
+    """
+    Standard Library (group/global) list view.
+    Filters by user's role/department:
+      role_part = (target_role blank|NULL|iexact user_role)
+      dept_part = (department blank|NULL|iexact user_dept)
+      If no department on user and LENIENT_IF_NO_DEPT=True -> allow all departments.
+    Supports ?q= (title/note) and ?tags=tag1,tag2 (JSONField overlap on PG, icontains fallback).
+    """
+    serializer_class = StandardLibraryItemSerializer
+    permission_classes = [IsAuthenticated]
+    REQUIRED_ROLE = None  # 'trainer' | 'trainee' | 'employee' | 'admin'
+
+    def has_required_role(self, user):
+        return user.is_superuser or self.REQUIRED_ROLE is None or user_role(user) == self.REQUIRED_ROLE
+
+    def get_queryset(self):
+        u = self.request.user
+        if not self.has_required_role(u):
+            raise PermissionDenied("Not allowed for this role.")
+
+        role = (user_role(u) or "").strip()
+        dept = (get_user_department(u) or "").strip()
+
+        # Department filtering
+        if dept:
+            dept_part = Q(department="") | Q(department__isnull=True) | Q(department__iexact=dept)
+        else:
+            # If user has no department, either allow all departments (lenient),
+            # or restrict to global (blank/NULL) only.
+            dept_part = Q() if LENIENT_IF_NO_DEPT else (Q(department="") | Q(department__isnull=True))
+
+        # Role filtering (case-insensitive, blanks allowed)
+        if role:
+            role_part = Q(target_role="") | Q(target_role__isnull=True) | Q(target_role__iexact=role)
+        else:
+            role_part = Q(target_role="") | Q(target_role__isnull=True)
+
+        base_q = dept_part & role_part
+
+        qs = (
+            StandardLibraryItem.objects.filter(is_active=True)
+            .filter(base_q)
+            .select_related("created_by")
+            .order_by("-created_at")
+            .distinct()
+        )
+
+        # Optional text search
+        q = (self.request.query_params.get("q") or "").strip()
+        if q:
+            qs = qs.filter(Q(title__icontains=q) | Q(note__icontains=q))
+
+        # Optional tags filter (?tags=a,b)
+        tags_param = (self.request.query_params.get("tags") or "").strip()
+        if tags_param:
+            tags = [t.strip() for t in tags_param.split(",") if t.strip()]
+            if tags:
+                try:
+                    qs = qs.filter(tags__overlap=tags)  # PostgreSQL JSONField
+                except Exception:
+                    for t in tags:  # SQLite/MySQL fallback
+                        qs = qs.filter(tags__icontains=t)
+
+        return qs

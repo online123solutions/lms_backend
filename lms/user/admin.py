@@ -1,7 +1,8 @@
 from django.contrib import admin
 from .models import (
     CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile,Courses, CourseLesson,Macroplanner,Microplanner,Subject,Lesson,Query,QueryResponse,
-    UserLoginActivity,AssessmentReport,Notification,NotificationReceipt,EmployeeLessonCompletion,TraineeLessonCompletion,AdminProfile,SOP
+    UserLoginActivity,AssessmentReport,Notification,NotificationReceipt,EmployeeLessonCompletion,TraineeLessonCompletion,AdminProfile,SOP,
+    StandardLibraryItem
     )
 from django_admin_listfilter_dropdown.filters import DropdownFilter
 
@@ -89,3 +90,10 @@ class SOPAdmin(admin.ModelAdmin):
     list_filter  = ("recipient_type","department","target_role","created_at")
     search_fields = ("title","note")
     filter_horizontal = ("recipients",)
+
+@admin.register(StandardLibraryItem)
+class StandardLibraryItemAdmin(admin.ModelAdmin):
+    list_display = ("title", "target_role", "department", "is_active", "created_at")
+    list_filter  = ("target_role", "department", "is_active", "created_at")
+    search_fields = ("title", "note")
+    readonly_fields = ("created_at",)

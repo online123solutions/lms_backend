@@ -651,3 +651,33 @@ class SOP(models.Model):
         if self.recipient_type == "GROUP":
             if not self.department and not self.target_role:
                 raise ValidationError("For GROUP, select at least Department or Role.")
+            
+
+class StandardLibraryItem(models.Model):
+    title = models.CharField(max_length=200)
+    note  = models.TextField(blank=True)
+
+    # Library is GROUP/global only (no recipients M2M)
+    department  = models.CharField(max_length=32, choices=Department, blank=True)
+    target_role = models.CharField(max_length=20, choices=PROFILE_TYPE_CHOICES, blank=True)
+
+    file = models.FileField(
+        upload_to="library/%Y/%m/",
+        validators=[FileExtensionValidator(["pdf"]), validate_pdf_mimetype, validate_max_size_10mb],
+        help_text="Upload PDF (max 10 MB)."
+    )
+
+    # Optional metadata
+    tags = models.JSONField(default=list, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    created_by = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, related_name="library_created")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Standard Library Item"
+        verbose_name_plural = "Standard Library"
+
+    def __str__(self):
+        return self.title

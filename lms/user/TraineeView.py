@@ -23,7 +23,6 @@ from collections import defaultdict
 from datetime import timedelta
 from django.db.models import Max,Avg,Count
 from django.db.models import Exists, OuterRef
-from django.utils import timezone
 
 # views.py
 from rest_framework.views import APIView
@@ -32,7 +31,7 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from .models import Subject, TraineeProfile, EmployeeProfile
 from .serializers import SubjectSerializer
-from .views import BaseSOPListView
+from .views import BaseSOPListView,BaseSLListView
 
 
 class SubjectListAPIView(APIView):
@@ -567,3 +566,6 @@ class TraineeNotificationsView(BaseUserNotificationsView):
 
 class TraineeSOPListView(BaseSOPListView):
     REQUIRED_ROLE = "trainee"
+
+class TraineeLibraryListView(BaseSLListView):
+    required_role = "trainee"

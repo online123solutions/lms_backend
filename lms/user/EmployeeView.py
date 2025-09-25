@@ -24,7 +24,7 @@ from datetime import timedelta
 from django.db.models import Count,Avg,Max
 from django.db.models import Exists, OuterRef
 from django.utils import timezone
-from .views import BaseSOPListView
+from .views import BaseSOPListView,BaseSLListView
 
 
 class EmployeeDashboardView(APIView):
@@ -556,3 +556,6 @@ class MarkLessonCompletedAPIView(APIView):
 
 class EmployeeSOPListView(BaseSOPListView):
     REQUIRED_ROLE = "employee"
+
+class EmployeeLibraryListView(BaseSLListView):
+    required_role = "employee"
