@@ -386,7 +386,7 @@ class EmployeeMacroplannerListAPIView(APIView):
         # Fetch macroplanners for employee's department
         qs = (
             Macroplanner.objects
-            .filter(department=employee.department)
+            .filter(department=employee.department,role=request.user.role)
             .order_by("-id")  # change to "-created_at" if you have that field
         )
 

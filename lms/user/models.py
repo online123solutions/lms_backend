@@ -199,12 +199,17 @@ class Macroplanner(models.Model):
         ('Theoretical', 'Theoretical'),
         ('Practical', 'Practical'),
     ]
+    ROLE_CHOICES = [
+    ('trainee', 'Trainee'),
+    ('employee', 'Employee'),
+    ]
     duration= models.CharField(max_length=20, choices=duration_choices, default='1 Month')
     month=models.CharField(max_length=100,choices=MONTH_CHOICES)
     week=models.CharField(max_length=100,default="",choices=weeks)
     department=models.CharField(max_length=100,choices=Department)
     module=models.CharField(max_length=100,default="")
     mode = models.CharField(max_length=20, choices=MODE_CHOICES, default='Theoretical')
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='trainee', db_index=True)
 
     def __str__(self):
         return f"Macroplanner - User: {self.department}, File: {self.month}"
@@ -221,6 +226,10 @@ class Microplanner(models.Model):
         ('Theoretical', 'Theoretical'),
         ('Practical', 'Practical'),
     ]
+    ROLE_CHOICES = [
+    ('trainee', 'Trainee'),
+    ('employee', 'Employee'),
+    ]
     month = models.CharField(max_length=20, choices=MONTH_CHOICES)
     week= models.CharField(max_length=100, choices=weeks)
     days= models.CharField(max_length=100,default="")
@@ -228,6 +237,7 @@ class Microplanner(models.Model):
     no_of_sessions = models.PositiveIntegerField(default="")
     name_of_topic = models.JSONField(default=list, blank=True, null=True)
     mode = models.CharField(max_length=20, choices=MODE_CHOICES, default='Theoretical')
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='trainee', db_index=True)
 
     class Meta:
         verbose_name_plural = "Microplanners"
