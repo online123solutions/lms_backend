@@ -365,13 +365,13 @@ class CourseLessonSerializer(serializers.ModelSerializer):
 class MacroplannerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Macroplanner
-        fields = ['id','week', 'duration', 'month', 'department', 'module','mode']
+        fields = ['id','week', 'duration', 'month', 'department', 'module','mode','role']
 
 
 class MicroplannerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Microplanner
-        fields = ['id', 'month', 'week', 'days','department', 'no_of_sessions', 'name_of_topic','mode']
+        fields = ['id', 'month', 'week', 'days','department', 'no_of_sessions', 'name_of_topic','mode','role']
 
 
 class AssessmentSerializer(serializers.ModelSerializer):
