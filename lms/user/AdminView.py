@@ -32,6 +32,7 @@ from django.core.exceptions import FieldDoesNotExist
 from quiz.models import Quiz
 from .utils import get_active_users
 from django.db.models import Case, When, Value, CharField, F, Q
+from .views import BaseSOPListView
 
 class AdminDashboardView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1125,3 +1126,6 @@ class AdminNotifyView(APIView):
             },
             status=200,
         )
+    
+class AdminSOPListView(BaseSOPListView):
+    REQUIRED_ROLE = "admin"

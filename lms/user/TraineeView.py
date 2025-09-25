@@ -30,9 +30,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
-
-from .models import Subject, TraineeProfile, EmployeeProfile  # ← import EmployeeProfile
+from .models import Subject, TraineeProfile, EmployeeProfile
 from .serializers import SubjectSerializer
+from .views import BaseSOPListView
 
 
 class SubjectListAPIView(APIView):
@@ -565,39 +565,5 @@ class TraineeNotificationsView(BaseUserNotificationsView):
         return super().list(request, *args, **kwargs)
         
 
-# class MarkLessonCompletedAPIView(APIView):
-#     permission_classes = [IsAuthenticated]
-
-#     def post(self, request, lesson_slug):
-#         try:
-#             # Determine if user has an Employee or Trainee profile
-#             try:
-#                 trainee = get_object_or_404(TraineeProfile, user=request.user)
-#             except TraineeProfile.DoesNotExist:
-#                 return Response({"error": "Only trainees can mark lessons as completed."}, status=status.HTTP_403_FORBIDDEN)
-
-#             lesson = get_object_or_404(Lesson, slug=lesson_slug)
-
-#             # Check if the lesson belongs to the user's department
-#             if lesson.department != trainee.department:
-#                 return Response({"error": "Lesson not available for your department."}, status=status.HTTP_403_FORBIDDEN)
-
-#             # Check if the lesson is already completed
-#             completion, created = TraineeLessonCompletion.objects.get_or_create(
-#                 trainee=trainee,
-#                 lesson=lesson,
-#                 defaults={'completed': True, 'completed_at': timezone.now()}
-#             )
-#             if not created and not completion.completed:
-#                 completion.completed = True
-#                 completion.completed_at = timezone.now()
-#                 completion.save()
-#             elif created or completion.completed:
-#                 return Response({"message": "Lesson already marked as completed."}, status=status.HTTP_200_OK)
-
-#             return Response({"message": "Lesson marked as completed."}, status=status.HTTP_200_OK)
-
-#         except Lesson.DoesNotExist:
-#             return Response({"error": "Lesson not found."}, status=status.HTTP_404_NOT_FOUND)
-#         except Exception as e:
-#             return Response({"error": f"An error occurred: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+class TraineeSOPListView(BaseSOPListView):
+    REQUIRED_ROLE = "trainee"

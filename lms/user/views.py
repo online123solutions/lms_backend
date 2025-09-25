@@ -2,10 +2,11 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from .serializers import (
-    TraineeSerializer, EmployeeSerializer, TrainerSerializer, AdminSerializer, LoginSerializer,UserExcelUploadSerializer,PasswordResetRequestSerializer
+    TraineeSerializer, EmployeeSerializer, TrainerSerializer, AdminSerializer, LoginSerializer,UserExcelUploadSerializer,PasswordResetRequestSerializer,
+    SOPSerializer
 )
 from .models import (
-    CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile, AdminProfile,NotificationReceipt
+    CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile, AdminProfile,NotificationReceipt,SOP
 )
 from .tasks import send_welcome_email,send_password_reset_email
 from drf_yasg.utils import swagger_auto_schema
@@ -25,6 +26,10 @@ import logging
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_decode
 from django.utils.encoding import force_str
+from django.core.exceptions import PermissionDenied
+from rest_framework.generics import ListAPIView
+from django.db.models import Q
+from .utils import get_user_department
 
 logger = logging.getLogger(__name__)
 
@@ -345,3 +350,51 @@ class PasswordResetConfirmView(APIView):
             return Response({"detail": "Invalid token or user ID."}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({"detail": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+
+LENIENT_IF_NO_DEPT = True  # set False to be strict
+
+def user_role(user):
+    return (getattr(user, "role", "") or "").lower()
+
+class BaseSOPListView(ListAPIView):
+    serializer_class = SOPSerializer
+    permission_classes = [IsAuthenticated]
+    REQUIRED_ROLE = None  # 'trainer' | 'trainee' | 'employee' | 'admin'
+
+    def has_required_role(self, user):
+        return user.is_superuser or self.REQUIRED_ROLE is None or user_role(user) == self.REQUIRED_ROLE
+
+    def get_queryset(self):
+        u = self.request.user
+        if not self.has_required_role(u):
+            raise PermissionDenied("Not allowed for this role.")
+
+        role = user_role(u)
+        dept = get_user_department(u)  # '' if not found
+
+        # INDIVIDUAL
+        q_individual = Q(recipient_type="INDIVIDUAL", recipients=u)
+
+        # GROUP
+        if dept:
+            dept_part = Q(department="") | Q(department__isnull=True) | Q(department__iexact=dept)
+        else:
+            # No department available for this user
+            dept_part = Q() if LENIENT_IF_NO_DEPT else (Q(department="") | Q(department__isnull=True))
+
+        # target_role in SOP is lower/upper tolerant
+        if role:
+            role_part = Q(target_role="") | Q(target_role__isnull=True) | Q(target_role__iexact=role)
+        else:
+            role_part = Q(target_role="") | Q(target_role__isnull=True)
+
+        q_group = Q(recipient_type="GROUP") & dept_part & role_part
+
+        return (
+            SOP.objects.filter(q_individual | q_group)
+            .select_related("created_by")
+            .prefetch_related("recipients")
+            .order_by("-created_at")
+            .distinct()
+        )

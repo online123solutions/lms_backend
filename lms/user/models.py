@@ -8,6 +8,9 @@ from django.db.models import Q
 from .tasks import send_email_to_trainer
 from django.utils import timezone
 from django.db.models import Avg
+from django.core.exceptions import ValidationError
+from django.core.validators import FileExtensionValidator
+
 
 class CustomUser(AbstractUser):
     ROLE_CHOICES = [
@@ -581,3 +584,60 @@ class TraineeLessonCompletion(models.Model):
 
     def __str__(self):
         return f"{self.trainee.user.username} - {self.lesson.name} - Completed: {self.completed}"
+
+
+PROFILE_TYPE_CHOICES = (
+    ('trainee', 'Trainee'),
+    ('employee','Employee'),
+    ('trainer', 'Trainer'),
+    ('admin',   'Admin'),
+)
+
+RECIPIENT_TYPE_CHOICES = (
+    ("GROUP", "Group"),
+    ("INDIVIDUAL", "Individual"),
+)
+
+def validate_pdf_mimetype(f):
+    ct = getattr(f, "content_type", None)
+    if ct and ct not in ("application/pdf", "application/x-pdf"):
+        raise ValidationError("Only PDF files are allowed.")
+
+def validate_max_size_10mb(f):
+    if f.size > 10 * 1024 * 1024:
+        raise ValidationError("File too large (max 10 MB).")
+
+class SOP(models.Model):
+    title = models.CharField(max_length=200)
+    note  = models.TextField(blank=True)
+
+    recipient_type = models.CharField(
+        max_length=12, choices=RECIPIENT_TYPE_CHOICES, default="GROUP"
+    )
+
+    # For GROUP targeting (wildcards allowed by leaving blank)
+    department  = models.CharField(max_length=32, choices=Department, blank=True)
+    target_role = models.CharField(max_length=20, choices=PROFILE_TYPE_CHOICES, blank=True)
+
+    # For INDIVIDUAL targeting
+    recipients = models.ManyToManyField(CustomUser, blank=True, related_name="sops_received")
+
+    file = models.FileField(
+        upload_to="sops/%Y/%m/",
+        validators=[FileExtensionValidator(["pdf"]), validate_pdf_mimetype, validate_max_size_10mb],
+        help_text="Upload PDF (max 10 MB)."
+    )
+
+    created_by = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, related_name="sops_created")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.title} ({self.recipient_type})"
+
+    def clean(self):
+        if self.recipient_type == "GROUP":
+            if not self.department and not self.target_role:
+                raise ValidationError("For GROUP, select at least Department or Role.")

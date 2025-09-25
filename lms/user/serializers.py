@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from .models import (
     CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile,AdminProfile,Courses, CourseLesson,Macroplanner,Microplanner,Assessment, AssessmentReport,EvaluationRemark
-    ,TrainingReport,UserLoginActivity,Query,QueryResponse,Subject,Lesson,Notification,NotificationReceipt
+    ,TrainingReport,UserLoginActivity,Query,QueryResponse,Subject,Lesson,Notification,NotificationReceipt,SOP
 )
 from django.contrib.auth import authenticate
 from quiz.serializers import ResultSerializer
@@ -709,3 +709,48 @@ class PasswordResetRequestSerializer(serializers.Serializer):
         if not CustomUser.objects.filter(email=value).exists():
             raise serializers.ValidationError("A user with this email does not exist.")
         return value
+    
+
+class SOPSerializer(serializers.ModelSerializer):
+    usernames = serializers.ListField(
+        child=serializers.CharField(), write_only=True, required=False,
+        help_text="For INDIVIDUAL, list of usernames."
+    )
+
+    class Meta:
+        model = SOP
+        fields = [
+            "id","title","note","recipient_type",
+            "department","target_role",
+            "recipients","usernames",
+            "file","created_by","created_at",
+        ]
+        read_only_fields = ("created_by","created_at")
+        extra_kwargs = {"recipients": {"required": False}}
+
+    def validate(self, attrs):
+        rtype = attrs.get("recipient_type", getattr(self.instance, "recipient_type", None))
+        if rtype == "GROUP":
+            dept = attrs.get("department", getattr(self.instance, "department", ""))
+            role = attrs.get("target_role", getattr(self.instance, "target_role", ""))
+            if not dept and not role:
+                raise serializers.ValidationError("For GROUP, select department and/or role.")
+        else:
+            if not attrs.get("usernames") and not attrs.get("recipients"):
+                raise serializers.ValidationError("For INDIVIDUAL, provide usernames or recipients.")
+        return attrs
+
+    def create(self, validated_data):
+        usernames = validated_data.pop("usernames", [])
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            validated_data["created_by"] = request.user
+
+        sop = super().create(validated_data)
+
+        if sop.recipient_type == "INDIVIDUAL":
+            if usernames:
+                users = CustomUser.objects.filter(username__in=usernames)
+                sop.recipients.set(users)
+        # GROUP recipients are matched dynamically in the list views
+        return sop

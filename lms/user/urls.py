@@ -12,17 +12,18 @@ from .TrainerView import (
 from .TraineeView import (
     SubjectListAPIView, LessonListAPIView, LessonDetailAPIView,TraineeDashboardView,AvailableQuizListAPIView,TraineeQueryCreateAPIView,
     TraineeQueryListAPIView,TraineeQueryResponseAPIView,ContentStartView, ContentEndView,TraineeMacroplannerListAPIView,TraineeMicroplannerListAPIView,
-    TraineeLoginActivityAPIView,TraineeNotificationsView
+    TraineeLoginActivityAPIView,TraineeNotificationsView,TraineeSOPListView
 )
 
 from .EmployeeView import (
     EmployeeDashboardView,EmployeeAvailableQuizListAPIView,EmployeeQueryCreateAPIView,EmployeeQueryListAPIView,EmployeeQueryResponseAPIView,
-    EmployeeMacroplannerListAPIView,EmployeeMicroplannerListAPIView,EmployeeLoginActivityAPIView,EmployeeNotificationsView,MarkLessonCompletedAPIView
+    EmployeeMacroplannerListAPIView,EmployeeMicroplannerListAPIView,EmployeeLoginActivityAPIView,EmployeeNotificationsView,MarkLessonCompletedAPIView,
+    EmployeeSOPListView
 )
 
 from .AdminView import (
     AdminDashboardView,AdminCourseView,AdminCourseLessonView,AdminLMSEngagementView,AdminRecentActivityView,AdminMacroplannerViewSet,
-    AdminMicroplannerViewSet,AdminTrainingReportView,AdminAssessmentReportView,AdminNotifyView
+    AdminMicroplannerViewSet,AdminTrainingReportView,AdminAssessmentReportView,AdminNotifyView,AdminSOPListView
 )
 from rest_framework.routers import DefaultRouter
 
@@ -77,6 +78,7 @@ urlpatterns = [
     path('trainee/notifications/', TraineeNotificationsView.as_view(), name='trainee-notifications'),
     path('trainee/mark-read/', mark_notification_read, name='trainee-mark-read'),
     path('trainee/lessons/<slug:lesson_slug>/complete/', MarkLessonCompletedAPIView.as_view(), name='mark-lesson-completed'),
+    path('trainee/sops/', TraineeSOPListView.as_view(), name='trainee-sops'),
     path('trainee/<str:username>/', TraineeDashboardView.as_view(), name='trainee-dashboard'),
 
     # Employee Urls
@@ -92,6 +94,7 @@ urlpatterns = [
     path('employee/notifications/', EmployeeNotificationsView.as_view(), name='employee-notifications'),
     path('employee/mark-read/', mark_notification_read, name='employee-mark-read'),
     path('employee/lessons/<slug:lesson_slug>/complete/', MarkLessonCompletedAPIView.as_view(), name='mark-lesson-completed'),
+    path('employee/sops/', EmployeeSOPListView.as_view(), name='employee-sops'),
     path('employee/<str:username>/', EmployeeDashboardView.as_view(), name='employee-dashboard'),
 
 
@@ -108,5 +111,6 @@ urlpatterns = [
     path('custom_admin/training-report/', AdminTrainingReportView.as_view({'get': 'list'}), name='admin-training-report'),
     path('custom_admin/assessment-reports/', AdminAssessmentReportView.as_view(), name='admin-assessment-reports'),
     path('custom_admin/notifications/send/', AdminNotifyView.as_view(), name='admin-send-notification'),
+    path("custom_admin/sops/", AdminSOPListView.as_view(),    name="sops-admin"),
     path('custom_admin/<str:username>', AdminDashboardView.as_view(), name='admin-dashboard'),
 ]

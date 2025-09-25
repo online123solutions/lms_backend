@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
     CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile,Courses, CourseLesson,Macroplanner,Microplanner,Subject,Lesson,Query,QueryResponse,
-    UserLoginActivity,AssessmentReport,Notification,NotificationReceipt,EmployeeLessonCompletion,TraineeLessonCompletion,AdminProfile
+    UserLoginActivity,AssessmentReport,Notification,NotificationReceipt,EmployeeLessonCompletion,TraineeLessonCompletion,AdminProfile,SOP
     )
 from django_admin_listfilter_dropdown.filters import DropdownFilter
 
@@ -82,3 +82,10 @@ class NotificationAdmin(admin.ModelAdmin):
 
 admin.site.register(EmployeeLessonCompletion)
 admin.site.register(TraineeLessonCompletion)
+
+@admin.register(SOP)
+class SOPAdmin(admin.ModelAdmin):
+    list_display = ("title","recipient_type","department","target_role","created_by","created_at")
+    list_filter  = ("recipient_type","department","target_role","created_at")
+    search_fields = ("title","note")
+    filter_horizontal = ("recipients",)
