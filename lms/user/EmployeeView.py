@@ -585,15 +585,38 @@ class EmployeeProgressViewSet(viewsets.ViewSet):
     """
     permission_classes = [IsAuthenticated]
 
-    # Detect optional supervisor field once
     SUPERVISOR_FIELD = first_existing_field(
         EmployeeProfile,
         ["trainer", "manager", "supervisor", "mentor"]
     )
 
-    def _build_progress(self, target_user):
+    # ✨ NEW: build "new subjects" list for the employee dashboard
+    def _get_new_subjects(self, request, employee_profile):
+        qs = Subject.objects.filter(
+            display_on_frontend=True,
+            is_new=True
+        )
+
+        # Optional: match subject department to employee's department if present
+        emp_dept = getattr(employee_profile, "department", None)
+        if emp_dept:
+            qs = qs.filter(department=emp_dept)
+
+        out = []
+        for s in qs.order_by('name'):
+            out.append({
+                "id": s.id,
+                "subject_id": s.subject_id,
+                "name": s.name,
+                "slug": s.slug,
+                "description": s.description or "",
+                "department": s.department,
+                "is_new": s.is_new,
+            })
+        return out
+
+    def _build_progress(self, request, target_user):
         # ---- profile ----
-        # always include 'user'; include supervisor field only if it exists
         sel = ['user']
         if self.SUPERVISOR_FIELD:
             sel.append(self.SUPERVISOR_FIELD)
@@ -633,7 +656,7 @@ class EmployeeProgressViewSet(viewsets.ViewSet):
             for r in completed_group
         }
 
-        # ---- build subject breakdown ----
+        # ---- subject breakdown ----
         subjects_out = []
         for subject_id, total in totals_map.items():
             done = completed_map.get(subject_id, {}).get("completed", 0)
@@ -656,6 +679,9 @@ class EmployeeProgressViewSet(viewsets.ViewSet):
         total_pending = max(total_lessons - total_done, 0)
         total_pct     = round((total_done / total_lessons) * 100.0, 2) if total_lessons else 0.0
 
+        # ✨ NEW: plug in new subjects (per employee dept + is_new)
+        new_subjects = self._get_new_subjects(request, profile)
+
         return {
             "user_id": target_user.id,
             "username": target_user.username,
@@ -668,14 +694,17 @@ class EmployeeProgressViewSet(viewsets.ViewSet):
                 "progress_pct": total_pct,
             },
             "subjects": subjects_out,
+            "new_subjects": new_subjects,   # <-- added
         }
 
     # /api/training/employee-progress/
     def list(self, request):
         if request.user.role != "employee":
-            return Response({"error": "Only employees can access their own progress here."},
-                            status=status.HTTP_403_FORBIDDEN)
-        data = self._build_progress(request.user)
+            return Response(
+                {"error": "Only employees can access their own progress here."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        data = self._build_progress(request, request.user)
         if "error" in data:
             return Response(data, status=status.HTTP_404_NOT_FOUND)
         return Response(EmployeeProgressSerializer(data).data)
@@ -690,23 +719,20 @@ class EmployeeProgressViewSet(viewsets.ViewSet):
         if request.user.role == "admin":
             pass
         elif request.user.role == "trainer":
-            # require a supervisor field to enforce assignment; otherwise deny
             if not self.SUPERVISOR_FIELD:
                 return Response(
                     {"error": "Unauthorized: no supervisor field on EmployeeProfile to validate trainer assignment."},
                     status=403
                 )
-            # check assignment dynamically using the detected field
             kw = {"user": target, f"{self.SUPERVISOR_FIELD}_id": request.user.id}
             if not EmployeeProfile.objects.filter(**kw).exists():
                 return Response({"error": "Unauthorized"}, status=403)
         elif request.user.role == "employee" and request.user.id == target.id:
-            # allow self-lookup
             pass
         else:
             return Response({"error": "Unauthorized"}, status=403)
 
-        data = self._build_progress(target)
+        data = self._build_progress(request, target)
         if "error" in data:
             return Response(data, status=404)
         return Response(EmployeeProgressSerializer(data).data)
