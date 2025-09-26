@@ -816,3 +816,20 @@ class StandardLibraryItemSerializer(serializers.ModelSerializer):
         # keep created_by unchanged
         validated_data.pop("created_by", None)
         return super().update(instance, validated_data)
+    
+
+class SubjectProgressSerializer(serializers.Serializer):
+    subject_id = serializers.IntegerField()
+    subject_name = serializers.CharField()
+    total_lessons = serializers.IntegerField()
+    completed_lessons = serializers.IntegerField()
+    pending_lessons = serializers.IntegerField()
+    progress_pct = serializers.FloatField()
+    last_completed_at = serializers.DateTimeField(allow_null=True)
+
+class TraineeProgressSerializer(serializers.Serializer):
+    user_id = serializers.IntegerField()
+    username = serializers.CharField()
+    name = serializers.CharField()
+    totals = serializers.DictField()
+    subjects = SubjectProgressSerializer(many=True)

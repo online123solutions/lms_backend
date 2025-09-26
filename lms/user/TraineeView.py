@@ -4,7 +4,7 @@ from rest_framework import status
 from .serializers import (
     SubjectSerializer, TraineeSerializer, LessonSerializer,QueryResponseSerializer, QuerySerializer,ContentEndSerializer,
     ContentStartSerializer,MacroplannerSerializer,MicroplannerSerializer,UserLoginActivitySerializer,NotificationReceiptSerializer,
-    ActiveQuizListSerializer
+    ActiveQuizListSerializer,TraineeProgressSerializer
 )
 from .models import (
     Subject, Lesson,TraineeProfile, UserLoginActivity,Query,Macroplanner, Microplanner,CustomUser,AssessmentReport,NotificationReceipt,
@@ -32,6 +32,7 @@ from rest_framework.permissions import IsAuthenticated
 from .models import Subject, TraineeProfile, EmployeeProfile
 from .serializers import SubjectSerializer
 from .views import BaseSOPListView,BaseSLListView
+from rest_framework import viewsets
 
 
 class SubjectListAPIView(APIView):
@@ -569,3 +570,122 @@ class TraineeSOPListView(BaseSOPListView):
 
 class TraineeLibraryListView(BaseSLListView):
     required_role = "trainee"
+
+class TraineeProgressViewSet(viewsets.ViewSet):
+    """
+    GET /api/training/trainee-progress/          -> progress for current user (if trainee)
+    GET /api/training/trainee-progress/<user_id> -> progress for a specific trainee (admin/trainer)
+    """
+    permission_classes = [IsAuthenticated]
+
+    from django.db.models import Count, Max
+
+    def _build_progress(self, target_user):
+        # ---- profile ----
+        profile = (
+            TraineeProfile.objects
+            .select_related('user', 'trainer')
+            .filter(user=target_user)
+            .first()
+        )
+        if not profile:
+            return {"error": "Trainee profile not found"}
+
+        # ---- all lessons grouped by subject ----
+        # Adjust Lesson import / filters to your app (e.g., .filter(is_active=True))
+        lessons_by_subject = (
+            Lesson.objects
+            .values('subject_id', 'subject__name')
+            .annotate(total=Count('id'))
+        )
+        totals_map = {r['subject_id']: r['total'] for r in lessons_by_subject}
+        names_map  = {r['subject_id']: r['subject__name'] for r in lessons_by_subject}
+
+        # ---- completed lessons for this trainee ----
+        comp_qs = (
+            TraineeLessonCompletion.objects
+            .filter(trainee=profile, completed=True)
+            .select_related('lesson__subject')
+        )
+        completed_group = (
+            comp_qs.values('lesson__subject_id')
+                .annotate(
+                    completed=Count('lesson_id'),
+                    last_completed_at=Max('completed_at')
+                )
+        )
+        completed_map = {
+            r['lesson__subject_id']: {
+                "completed": r['completed'],
+                "last_completed_at": r['last_completed_at']
+            }
+            for r in completed_group
+        }
+
+        # ---- build subject breakdown ----
+        subjects_out = []
+        for subject_id, total in totals_map.items():
+            done = completed_map.get(subject_id, {}).get("completed", 0)
+            last = completed_map.get(subject_id, {}).get("last_completed_at")
+            pending = max(total - done, 0)
+            pct = round((done / total) * 100.0, 2) if total else 0.0
+            subjects_out.append({
+                "subject_id": subject_id,
+                "subject_name": names_map.get(subject_id, "Unknown"),
+                "total_lessons": total,
+                "completed_lessons": done,
+                "pending_lessons": pending,
+                "progress_pct": pct,
+                "last_completed_at": last,
+            })
+
+        # ---- overall ----
+        total_lessons = sum(s["total_lessons"] for s in subjects_out)
+        total_done    = sum(s["completed_lessons"] for s in subjects_out)
+        total_pending = max(total_lessons - total_done, 0)
+        total_pct     = round((total_done / total_lessons) * 100.0, 2) if total_lessons else 0.0
+
+        return {
+            "user_id": target_user.id,
+            "username": target_user.username,
+            "name": getattr(profile, "name", target_user.get_full_name() or target_user.username),
+            "totals": {
+                "subjects_total": len(subjects_out),
+                "lessons_total": total_lessons,
+                "lessons_completed": total_done,
+                "lessons_pending": total_pending,
+                "progress_pct": total_pct,
+            },
+            "subjects": subjects_out,
+        }
+
+    # /api/training/trainee-progress/
+    def list(self, request):
+        if request.user.role != "trainee":
+            return Response({"error": "Only trainees can access their own progress here."},
+                            status=status.HTTP_403_FORBIDDEN)
+        data = self._build_progress(request.user)
+        if "error" in data:
+            return Response(data, status=status.HTTP_404_NOT_FOUND)
+        return Response(TraineeProgressSerializer(data).data)
+
+    # /api/training/trainee-progress/<pk>/
+    def retrieve(self, request, pk=None):
+        # admin -> any trainee; trainer -> only assigned trainees
+        try:
+            target = CustomUser.objects.get(id=pk, role='trainee', is_active=True)
+        except CustomUser.DoesNotExist:
+            return Response({"error": "Trainee not found"}, status=404)
+
+        if request.user.role == "admin":
+            pass
+        elif request.user.role == "trainer":
+            if not TraineeProfile.objects.filter(user=target, trainer_id=request.user.id).exists():
+                return Response({"error": "Unauthorized"}, status=403)
+        else:
+            return Response({"error": "Unauthorized"}, status=403)
+
+        data = self._build_progress(target)
+        if "error" in data:
+            return Response(data, status=404)
+        return Response(TraineeProgressSerializer(data).data)
