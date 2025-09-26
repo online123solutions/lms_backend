@@ -18,7 +18,7 @@ from .TraineeView import (
 from .EmployeeView import (
     EmployeeDashboardView,EmployeeAvailableQuizListAPIView,EmployeeQueryCreateAPIView,EmployeeQueryListAPIView,EmployeeQueryResponseAPIView,
     EmployeeMacroplannerListAPIView,EmployeeMicroplannerListAPIView,EmployeeLoginActivityAPIView,EmployeeNotificationsView,MarkLessonCompletedAPIView,
-    EmployeeSOPListView,EmployeeLibraryListView
+    EmployeeSOPListView,EmployeeLibraryListView,EmployeeProgressViewSet
 )
 
 from .AdminView import (
@@ -37,6 +37,7 @@ router.register(r'custom_admin/microplanners', AdminMicroplannerViewSet, basenam
 router.register(r'trainer/training-report', TrainingReportView, basename='training-report')
 router.register(r'custom_admin/training-report', AdminTrainingReportView, basename='admin-training-report')
 router.register(r'trainee/trainee-progress', TraineeProgressViewSet, basename='trainee-progress')
+router.register(r'employee/employee-progress', EmployeeProgressViewSet, basename='employee-progress')
 
 urlpatterns = [
     path('', include(router.urls)),

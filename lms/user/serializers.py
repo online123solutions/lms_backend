@@ -833,3 +833,10 @@ class TraineeProgressSerializer(serializers.Serializer):
     name = serializers.CharField()
     totals = serializers.DictField()
     subjects = SubjectProgressSerializer(many=True)
+
+class EmployeeProgressSerializer(serializers.Serializer):
+    user_id = serializers.IntegerField()
+    username = serializers.CharField()
+    name = serializers.CharField()
+    totals = serializers.DictField()
+    subjects = serializers.ListField(child=serializers.DictField())

@@ -4,7 +4,7 @@ from rest_framework import status
 from .serializers import (
     SubjectSerializer, TraineeSerializer,EmployeeSerializer, LessonSerializer,QueryResponseSerializer, QuerySerializer,ContentEndSerializer,
     ContentStartSerializer,MacroplannerSerializer,MicroplannerSerializer,UserLoginActivitySerializer,NotificationReceiptSerializer,
-    ActiveQuizListSerializer
+    ActiveQuizListSerializer,EmployeeProgressSerializer
 )
 from .models import (
     Subject,TraineeProfile, UserLoginActivity,Query,Macroplanner, Microplanner,CustomUser,AssessmentReport,EmployeeProfile,NotificationReceipt,
@@ -25,6 +25,8 @@ from django.db.models import Count,Avg,Max
 from django.db.models import Exists, OuterRef
 from django.utils import timezone
 from .views import BaseSOPListView,BaseSLListView
+from rest_framework import viewsets
+from django.core.exceptions import FieldDoesNotExist
 
 
 class EmployeeDashboardView(APIView):
@@ -559,3 +561,152 @@ class EmployeeSOPListView(BaseSOPListView):
 
 class EmployeeLibraryListView(BaseSLListView):
     required_role = "employee"
+
+def model_has_field(model, field_name: str) -> bool:
+    try:
+        model._meta.get_field(field_name)
+        return True
+    except FieldDoesNotExist:
+        return False
+
+
+def first_existing_field(model, candidates):
+    for name in candidates:
+        if model_has_field(model, name):
+            return name
+    return None
+
+
+class EmployeeProgressViewSet(viewsets.ViewSet):
+    """
+    GET /api/training/employee-progress/          -> progress for current user (employee)
+    GET /api/training/employee-progress/<user_id> -> progress for a specific employee (admin/trainer*)
+    *trainer access requires EmployeeProfile to have a FK like trainer/manager/supervisor/mentor
+    """
+    permission_classes = [IsAuthenticated]
+
+    # Detect optional supervisor field once
+    SUPERVISOR_FIELD = first_existing_field(
+        EmployeeProfile,
+        ["trainer", "manager", "supervisor", "mentor"]
+    )
+
+    def _build_progress(self, target_user):
+        # ---- profile ----
+        # always include 'user'; include supervisor field only if it exists
+        sel = ['user']
+        if self.SUPERVISOR_FIELD:
+            sel.append(self.SUPERVISOR_FIELD)
+
+        profile_qs = EmployeeProfile.objects.select_related(*sel)
+        profile = profile_qs.filter(user=target_user).first()
+        if not profile:
+            return {"error": "Employee profile not found"}
+
+        # ---- all lessons grouped by subject ----
+        lessons_by_subject = (
+            Lesson.objects
+            .values('subject_id', 'subject__name')
+            .annotate(total=Count('id'))
+        )
+        totals_map = {r['subject_id']: r['total'] for r in lessons_by_subject}
+        names_map  = {r['subject_id']: r['subject__name'] for r in lessons_by_subject}
+
+        # ---- completed lessons for this employee ----
+        comp_qs = (
+            EmployeeLessonCompletion.objects
+            .filter(employee=profile, completed=True)
+            .select_related('lesson__subject')
+        )
+        completed_group = (
+            comp_qs.values('lesson__subject_id')
+                   .annotate(
+                       completed=Count('lesson_id'),
+                       last_completed_at=Max('completed_at')
+                   )
+        )
+        completed_map = {
+            r['lesson__subject_id']: {
+                "completed": r['completed'],
+                "last_completed_at": r['last_completed_at']
+            }
+            for r in completed_group
+        }
+
+        # ---- build subject breakdown ----
+        subjects_out = []
+        for subject_id, total in totals_map.items():
+            done = completed_map.get(subject_id, {}).get("completed", 0)
+            last = completed_map.get(subject_id, {}).get("last_completed_at")
+            pending = max(total - done, 0)
+            pct = round((done / total) * 100.0, 2) if total else 0.0
+            subjects_out.append({
+                "subject_id": subject_id,
+                "subject_name": names_map.get(subject_id, "Unknown"),
+                "total_lessons": total,
+                "completed_lessons": done,
+                "pending_lessons": pending,
+                "progress_pct": pct,
+                "last_completed_at": last,
+            })
+
+        # ---- overall ----
+        total_lessons = sum(s["total_lessons"] for s in subjects_out)
+        total_done    = sum(s["completed_lessons"] for s in subjects_out)
+        total_pending = max(total_lessons - total_done, 0)
+        total_pct     = round((total_done / total_lessons) * 100.0, 2) if total_lessons else 0.0
+
+        return {
+            "user_id": target_user.id,
+            "username": target_user.username,
+            "name": getattr(profile, "name", target_user.get_full_name() or target_user.username),
+            "totals": {
+                "subjects_total": len(subjects_out),
+                "lessons_total": total_lessons,
+                "lessons_completed": total_done,
+                "lessons_pending": total_pending,
+                "progress_pct": total_pct,
+            },
+            "subjects": subjects_out,
+        }
+
+    # /api/training/employee-progress/
+    def list(self, request):
+        if request.user.role != "employee":
+            return Response({"error": "Only employees can access their own progress here."},
+                            status=status.HTTP_403_FORBIDDEN)
+        data = self._build_progress(request.user)
+        if "error" in data:
+            return Response(data, status=status.HTTP_404_NOT_FOUND)
+        return Response(EmployeeProgressSerializer(data).data)
+
+    # /api/training/employee-progress/<pk>/
+    def retrieve(self, request, pk=None):
+        try:
+            target = CustomUser.objects.get(id=pk, role='employee', is_active=True)
+        except CustomUser.DoesNotExist:
+            return Response({"error": "Employee not found"}, status=404)
+
+        if request.user.role == "admin":
+            pass
+        elif request.user.role == "trainer":
+            # require a supervisor field to enforce assignment; otherwise deny
+            if not self.SUPERVISOR_FIELD:
+                return Response(
+                    {"error": "Unauthorized: no supervisor field on EmployeeProfile to validate trainer assignment."},
+                    status=403
+                )
+            # check assignment dynamically using the detected field
+            kw = {"user": target, f"{self.SUPERVISOR_FIELD}_id": request.user.id}
+            if not EmployeeProfile.objects.filter(**kw).exists():
+                return Response({"error": "Unauthorized"}, status=403)
+        elif request.user.role == "employee" and request.user.id == target.id:
+            # allow self-lookup
+            pass
+        else:
+            return Response({"error": "Unauthorized"}, status=403)
+
+        data = self._build_progress(target)
+        if "error" in data:
+            return Response(data, status=404)
+        return Response(EmployeeProgressSerializer(data).data)
