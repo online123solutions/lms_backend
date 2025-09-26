@@ -577,12 +577,9 @@ def first_existing_field(model, candidates):
     return None
 
 
+from django.db.models import Count, Max, Q
+
 class EmployeeProgressViewSet(viewsets.ViewSet):
-    """
-    GET /api/training/employee-progress/          -> progress for current user (employee)
-    GET /api/training/employee-progress/<user_id> -> progress for a specific employee (admin/trainer*)
-    *trainer access requires EmployeeProfile to have a FK like trainer/manager/supervisor/mentor
-    """
     permission_classes = [IsAuthenticated]
 
     SUPERVISOR_FIELD = first_existing_field(
@@ -590,21 +587,18 @@ class EmployeeProgressViewSet(viewsets.ViewSet):
         ["trainer", "manager", "supervisor", "mentor"]
     )
 
-    # ✨ NEW: build "new subjects" list for the employee dashboard
     def _get_new_subjects(self, request, employee_profile):
         qs = Subject.objects.filter(
             display_on_frontend=True,
-            is_new=True
+            is_new=True,
         )
-
-        # Optional: match subject department to employee's department if present
+        # optional dept narrowing
         emp_dept = getattr(employee_profile, "department", None)
         if emp_dept:
             qs = qs.filter(department=emp_dept)
 
-        out = []
-        for s in qs.order_by('name'):
-            out.append({
+        return [
+            {
                 "id": s.id,
                 "subject_id": s.subject_id,
                 "name": s.name,
@@ -612,34 +606,55 @@ class EmployeeProgressViewSet(viewsets.ViewSet):
                 "description": s.description or "",
                 "department": s.department,
                 "is_new": s.is_new,
-            })
-        return out
+                "image": request.build_absolute_uri(s.image.url) if s.image else None,
+            }
+            for s in qs.order_by("name")
+        ]
 
-    def _build_progress(self, request, target_user):
+    def _build_progress(self, request, target_user, *, only_new=False):
         # ---- profile ----
         sel = ['user']
         if self.SUPERVISOR_FIELD:
             sel.append(self.SUPERVISOR_FIELD)
 
-        profile_qs = EmployeeProfile.objects.select_related(*sel)
-        profile = profile_qs.filter(user=target_user).first()
+        profile = EmployeeProfile.objects.select_related(*sel).filter(user=target_user).first()
         if not profile:
             return {"error": "Employee profile not found"}
 
-        # ---- all lessons grouped by subject ----
+        # Optional department filter
+        emp_dept = getattr(profile, "department", None)
+
+        # ---- base filters ----
+        # Subject scope
+        subj_filter = Q(subject__display_on_frontend=True)
+        if only_new:
+            subj_filter &= Q(subject__is_new=True)
+        if emp_dept:
+            subj_filter &= Q(subject__department=emp_dept)
+
+        # Lesson scope
+        lesson_filter = Q(display_on_frontend=True)
+        if only_new:
+            lesson_filter &= Q(is_new=True)
+        if emp_dept:
+            lesson_filter &= Q(department=emp_dept)
+
+        # ---- lessons grouped by subject (counts built from filtered lessons) ----
         lessons_by_subject = (
             Lesson.objects
+            .filter(lesson_filter & subj_filter)
             .values('subject_id', 'subject__name')
             .annotate(total=Count('id'))
         )
         totals_map = {r['subject_id']: r['total'] for r in lessons_by_subject}
         names_map  = {r['subject_id']: r['subject__name'] for r in lessons_by_subject}
 
-        # ---- completed lessons for this employee ----
+        # ---- completed lessons for this employee (only within filtered scope) ----
         comp_qs = (
             EmployeeLessonCompletion.objects
             .filter(employee=profile, completed=True)
             .select_related('lesson__subject')
+            .filter(lesson__in=Lesson.objects.filter(lesson_filter & subj_filter))
         )
         completed_group = (
             comp_qs.values('lesson__subject_id')
@@ -656,7 +671,7 @@ class EmployeeProgressViewSet(viewsets.ViewSet):
             for r in completed_group
         }
 
-        # ---- subject breakdown ----
+        # ---- subject breakdown (only subjects that survived the filters) ----
         subjects_out = []
         for subject_id, total in totals_map.items():
             done = completed_map.get(subject_id, {}).get("completed", 0)
@@ -679,8 +694,8 @@ class EmployeeProgressViewSet(viewsets.ViewSet):
         total_pending = max(total_lessons - total_done, 0)
         total_pct     = round((total_done / total_lessons) * 100.0, 2) if total_lessons else 0.0
 
-        # ✨ NEW: plug in new subjects (per employee dept + is_new)
-        new_subjects = self._get_new_subjects(request, profile)
+        # New subjects list (for the employee dashboard showcase)
+        new_subjects = self._get_new_subjects(request, profile) if only_new else []
 
         return {
             "user_id": target_user.id,
@@ -694,17 +709,17 @@ class EmployeeProgressViewSet(viewsets.ViewSet):
                 "progress_pct": total_pct,
             },
             "subjects": subjects_out,
-            "new_subjects": new_subjects,   # <-- added
+            "new_subjects": new_subjects,
         }
 
     # /api/training/employee-progress/
     def list(self, request):
         if request.user.role != "employee":
-            return Response(
-                {"error": "Only employees can access their own progress here."},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        data = self._build_progress(request, request.user)
+            return Response({"error": "Only employees can access their own progress here."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # Employees see ONLY "new" subjects/lessons by default
+        data = self._build_progress(request, request.user, only_new=True)
         if "error" in data:
             return Response(data, status=status.HTTP_404_NOT_FOUND)
         return Response(EmployeeProgressSerializer(data).data)
@@ -732,7 +747,10 @@ class EmployeeProgressViewSet(viewsets.ViewSet):
         else:
             return Response({"error": "Unauthorized"}, status=403)
 
-        data = self._build_progress(request, target)
+        # Support a query param to control filtering:
+        # /employee-progress/<pk>/?only_new=1
+        only_new = request.query_params.get("only_new") in ("1", "true", "True", "yes")
+        data = self._build_progress(request, target, only_new=only_new)
         if "error" in data:
             return Response(data, status=404)
         return Response(EmployeeProgressSerializer(data).data)
