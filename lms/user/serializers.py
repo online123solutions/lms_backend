@@ -955,3 +955,18 @@ class AdminTrainerSummaryRowSerializer(serializers.Serializer):
     total_lessons = serializers.IntegerField()
     completed_lessons = serializers.IntegerField()
     completion_percent = serializers.IntegerField()
+
+# serializers.py
+class InboxNotificationSerializer(serializers.ModelSerializer):
+    sent_by = serializers.SerializerMethodField()
+    read_at = serializers.DateTimeField(source='my_read_at', allow_null=True)
+
+    def get_sent_by(self, obj):
+        u = getattr(obj, "sent_by", None)
+        if not u:
+            return None
+        return {"username": u.username, "role": getattr(u, "role", None)}
+
+    class Meta:
+        model = Notification
+        fields = ("id", "subject", "message", "link", "created_at", "sent_by", "read_at")

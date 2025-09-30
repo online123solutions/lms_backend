@@ -12,7 +12,7 @@ from user.serializers import (
     TrainerSerializer,CourseSerializer, CourseLessonSerializer, MacroplannerSerializer, MicroplannerSerializer,AssessmentSerializer,AssessmentReportSerializer,
     EvaluationRemarkSerializer,TrainingReportSerializer,UserLoginActivitySerializer,QueryResponseSerializer,QuerySerializer,
     EmployeeSerializer,TrainerNotificationRequestSerializer,SentNotificationSerializer,ActiveUserSerializer,TrainerLessonProgressWriteSerializer,
-    CourseProgressSummarySerializer
+    InboxNotificationSerializer
 )
 from rest_framework.generics import ListCreateAPIView,RetrieveUpdateAPIView, ListAPIView
 from drf_yasg.utils import swagger_auto_schema
@@ -33,6 +33,7 @@ from django.core.exceptions import FieldDoesNotExist
 from quiz.models import Quiz
 from .utils import get_active_users,get_trainer_profile
 from .views import BaseSLListView,BaseSOPListView
+from django.db.models import Q, Count, OuterRef, Subquery, DateTimeField, Exists
 
 class TrainerDashboardView(APIView):
     permission_classes = [IsAuthenticated]
@@ -513,60 +514,121 @@ class TrainerNotifyView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def get(self, request):
-        # Same auth gate as POST
+        """
+        List trainer notifications.
+
+        Query params:
+        - box: sent | inbox | both  (default: sent)
+        - search: str (subject/message/link contains)
+        - date_from: YYYY-MM-DD (created_at >=)
+        - date_to: YYYY-MM-DD (created_at <=)
+        - from_admin: true|false (only show those sent_by staff/admin)
+        """
         role = getattr(request.user, "role", None)
         if role != "trainer" and not request.user.is_staff:
-            return Response({"error": "Only trainers can view their sent notifications."},
-                            status=status.HTTP_403_FORBIDDEN)
-
-        qs = (
-            Notification.objects.filter(sent_by=request.user)
-            .annotate(recipients_count=Count("notificationreceipt", distinct=True))
-        )
-
-        # --- Filters ---
-        search = (request.query_params.get("search") or "").strip()
-        if search:
-            qs = qs.filter(
-                Q(subject__icontains=search)
-                | Q(message__icontains=search)
-                | Q(link__icontains=search)
+            return Response(
+                {"error": "Only trainers can view notifications here."},
+                status=status.HTTP_403_FORBIDDEN
             )
 
+        box = (request.query_params.get("box") or "sent").strip().lower()
+        if box not in ("sent", "inbox", "both"):
+            box = "sent"
+
+        search = (request.query_params.get("search") or "").strip()
         date_from = (request.query_params.get("date_from") or "").strip()
         date_to = (request.query_params.get("date_to") or "").strip()
-        # filter only if your Notification has created_at (adjust if different)
-        if date_from:
-            qs = qs.filter(created_at__date__gte=date_from)
-        if date_to:
-            qs = qs.filter(created_at__date__lte=date_to)
-
-        qs = qs.order_by("-created_at", "-id")  # safe even if created_at ties
+        from_admin = (request.query_params.get("from_admin") or "").strip().lower() in ("1", "true", "yes")
 
         paginator = SmallPageNumberPagination()
-        page = paginator.paginate_queryset(qs, request)
-        ser = SentNotificationSerializer(page, many=True)
-        return paginator.get_paginated_response(ser.data)
 
+        # ---------- Base query builders ----------
+        def apply_common_filters(qs):
+            if search:
+                qs = qs.filter(
+                    Q(subject__icontains=search)
+                    | Q(message__icontains=search)
+                    | Q(link__icontains=search)
+                )
+            if date_from:
+                qs = qs.filter(created_at__date__gte=date_from)
+            if date_to:
+                qs = qs.filter(created_at__date__lte=date_to)
+            if from_admin:
+                # treat staff as admin
+                qs = qs.filter(Q(sent_by__is_staff=True) | Q(sent_by__role="admin"))
+            return qs.order_by("-created_at", "-id")
+
+        page_payload = {}
+
+        if box in ("sent", "both"):
+            sent_qs = (
+                Notification.objects
+                .filter(sent_by=request.user)
+                .annotate(recipients_count=Count("notificationreceipt", distinct=True))
+            )
+            sent_qs = apply_common_filters(sent_qs)
+            sent_page = paginator.paginate_queryset(sent_qs, request) if box == "sent" else list(sent_qs[:50])  # cap for "both"
+            sent_ser = SentNotificationSerializer(sent_page, many=True)
+            page_payload["sent"] = sent_ser.data
+
+        if box in ("inbox", "both"):
+            # Subquery to pull this trainer's read_at for each notification
+            receipt_sq = NotificationReceipt.objects.filter(
+                notification_id=OuterRef("pk"),
+                user_id=request.user.id,
+            ).values("read_at")[:1]
+
+            # Also check existence to ensure we only fetch those addressed to this user
+            exists_receipt = NotificationReceipt.objects.filter(
+                notification_id=OuterRef("pk"),
+                user_id=request.user.id,
+            )
+
+            inbox_qs = (
+                Notification.objects
+                .annotate(
+                    _has_my_receipt=Exists(exists_receipt),
+                    my_read_at=Subquery(receipt_sq, output_field=DateTimeField()),
+                )
+                .filter(_has_my_receipt=True)
+            )
+            inbox_qs = apply_common_filters(inbox_qs)
+            inbox_page = paginator.paginate_queryset(inbox_qs, request) if box == "inbox" else list(inbox_qs[:50])
+            # Expect your Inbox serializer to expose: id, subject, message, link, created_at,
+            # sent_by (nested or username), my_read_at
+            inbox_ser = InboxNotificationSerializer(inbox_page, many=True)
+            page_payload["inbox"] = inbox_ser.data
+
+        # If box is "sent" or "inbox", return a paginated response for that one box.
+        # If box is "both", return a plain Response (no paginator merging across two lists).
+        if box == "both":
+            return Response(page_payload, status=200)
+        else:
+            # keep paginator behavior consistent for single box
+            return paginator.get_paginated_response(page_payload.get(box, []))
 
     @swagger_auto_schema(
         operation_description="""
-        Send notifications (Trainer → Employees/Trainees).
+        Send notifications.
+
+        Who can send:
+        - trainer (role=trainer)
+        - staff/admin (is_staff=True or role=admin)
 
         Modes:
-        - individual: pass `usernames` (list of usernames; employees and/or trainees)
+        - individual: pass `usernames` (list)
         - group:
-            audience: employee | trainee | both
-            department (optional, employees only; defaults to trainer's department if available)
+            audience: employee | trainee | trainer | both | all
+            department (optional; applies to employees; defaults to trainer's department if available)
         """,
         request_body=TrainerNotificationRequestSerializer,
         responses={200: openapi.Response("OK"), 400: "Bad Request", 403: "Forbidden", 404: "Not Found"}
     )
     def post(self, request):
-        # ✅ Only trainers (or staff, if you allow) can send
         role = getattr(request.user, "role", None)
         if role != "trainer" and not request.user.is_staff:
-            return Response({"error": "Only trainers can send notifications."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"error": "Only trainers or staff can send notifications."}, status=status.HTTP_403_FORBIDDEN)
 
         ser = TrainerNotificationRequestSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
@@ -577,7 +639,7 @@ class TrainerNotifyView(APIView):
         link       = (data.get("link") or "").strip() or None
         notif_type = data["notification_type"]
         mode       = data["mode"]
-        audience   = data["audience"]          # employee | trainee | both
+        audience   = data["audience"].strip().lower()  # employee | trainee | trainer | both | all
         dept_arg   = (data.get("department") or "").strip() or None
 
         # Get trainer dept (fallback)
@@ -588,7 +650,6 @@ class TrainerNotifyView(APIView):
         except TrainerProfile.DoesNotExist:
             pass
 
-        # ---------- Build recipients ----------
         base_q = Q(is_active=True)
         role_q = Q()
 
@@ -596,19 +657,18 @@ class TrainerNotifyView(APIView):
             usernames = data.get("usernames") or []
             if not usernames:
                 return Response({"error": "`usernames` is required for individual mode."}, status=400)
-
-            # normalize + dedupe
             usernames = list({str(u).strip() for u in usernames if str(u).strip()})
             if not usernames:
                 return Response({"error": "No valid usernames provided."}, status=400)
-
-            # Optionally enforce audience subset:
-            # if audience != "both":
-            #     role_q = Q(role=("employee" if audience == "employee" else "trainee"))
-
             qs = CustomUser.objects.filter(base_q, Q(username__in=usernames)).only("id", "email", "role")
+
         elif mode == "group":
-            if audience in ("employee", "both"):
+            # Expand audience options
+            wants_employee = audience in ("employee", "both", "all")
+            wants_trainee  = audience in ("trainee", "both", "all")
+            wants_trainer  = audience in ("trainer", "all")
+
+            if wants_employee:
                 if dept_arg:
                     role_q |= Q(role="employee", employee_profile__department=dept_arg)
                 elif trainer_dept:
@@ -616,20 +676,21 @@ class TrainerNotifyView(APIView):
                 else:
                     role_q |= Q(role="employee")
 
-            if audience in ("trainee", "both"):
+            if wants_trainee:
                 role_q |= Q(role="trainee")
+
+            if wants_trainer:
+                role_q |= Q(role="trainer")
 
             if role_q.children == []:
                 return Response({"error": "Invalid audience for group mode."}, status=400)
 
             qs = CustomUser.objects.filter(base_q & role_q).only("id", "email", "role")
+
         else:
             return Response({"error": "Invalid mode. Use 'individual' or 'group'."}, status=400)
 
-        # Exclude sender & dedupe
         qs = qs.exclude(id=request.user.id).distinct()
-
-        # Pull ids/emails without materializing full objects
         recipients = list(qs.values_list("id", "email", "role"))
         if not recipients:
             return Response({"error": "No matching recipients found."}, status=404)
@@ -640,8 +701,8 @@ class TrainerNotifyView(APIView):
 
         emp_count = sum(1 for r in roles if r == "employee")
         trn_count = sum(1 for r in roles if r == "trainee")
+        tnr_count = sum(1 for r in roles if r == "trainer")
 
-        # ---------- Write + side-effects ----------
         with transaction.atomic():
             notif = Notification.objects.create(
                 subject=subject,
@@ -651,7 +712,6 @@ class TrainerNotifyView(APIView):
                 sent_by=request.user,
             )
 
-            # Bulk receipts in chunks (better on large sends)
             from itertools import islice
             def chunks(seq, n):
                 it = iter(seq)
@@ -667,14 +727,11 @@ class TrainerNotifyView(APIView):
                     ignore_conflicts=True,
                 )
 
-        # Async side effects (use your Celery tasks)
-        # 1) Push in one go by ids (your task already takes list of ids)
         try:
             send_push_notification.delay(ids, subject, message)
         except Exception:
-            pass  # don't break the response on side-effect failures
+            pass
 
-        # 2) Fan out emails as individual tasks (or implement a batched task)
         for e in emails:
             try:
                 send_notification_email.delay(e, subject, message)
@@ -685,7 +742,7 @@ class TrainerNotifyView(APIView):
             {
                 "message": f"Notification sent to {len(ids)} user(s).",
                 "notification_id": notif.id,
-                "counts": {"employees": emp_count, "trainees": trn_count},
+                "counts": {"employees": emp_count, "trainees": trn_count, "trainers": tnr_count},
                 "audience": audience,
                 "mode": mode,
                 "department_scope": dept_arg or trainer_dept or None,
@@ -984,22 +1041,30 @@ class TrainerLessonProgressView(ListCreateAPIView):
         )
 
 class TrainerCourseProgressSummaryView(ListAPIView):
+    """
+    Per-course summary for signed-in trainer, using course_name/lesson_name.
+    """
     permission_classes = [IsAuthenticated]
     pagination_class = None
 
     def list(self, request, *args, **kwargs):
-        trainer = get_trainer_profile(request.user)
+        trainer = getattr(request.user, "trainer_profile", None)
         if not trainer:
             return Response([])
 
         courses = Courses.objects.filter(
             department=trainer.department,
             display_on_frontend=True,
-        ).only("id", "course_id", "course_name")
+            # is_approved=True,   # optional gate
+        ).only("id", "course_name")
 
         lesson_counts = dict(
             CourseLesson.objects
-            .filter(course__in=courses, display_on_frontend=True)
+            .filter(
+                course__in=courses,
+                display_on_frontend=True,
+                # is_approved=True,  # optional gate
+            )
             .values("course_id")
             .annotate(total=Count("id"))
             .values_list("course_id", "total")
@@ -1007,7 +1072,13 @@ class TrainerCourseProgressSummaryView(ListAPIView):
 
         completed_by_course = dict(
             TrainerLessonProgress.objects
-            .filter(trainer=trainer, lesson__course__in=courses, status="completed")
+            .filter(
+                trainer=trainer,
+                lesson__course__in=courses,
+                lesson__display_on_frontend=True,
+                # lesson__is_approved=True,  # optional gate
+                status="completed",
+            )
             .values("lesson__course_id")
             .annotate(done=Count("id"))
             .values_list("lesson__course_id", "done")
@@ -1019,8 +1090,8 @@ class TrainerCourseProgressSummaryView(ListAPIView):
             done = int(completed_by_course.get(c.id, 0) or 0)
             percent = int(round((done / total) * 100)) if total else 0
             payload.append({
-                "course_id": c.id,
-                "course_code": c.course_id,
+                "course_id": c.id,               # DB pk (int)
+                "course_code": c.course_id,      # your unique string code
                 "course_name": c.course_name,
                 "total_lessons": total,
                 "completed_lessons": done,
