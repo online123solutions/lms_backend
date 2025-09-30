@@ -265,6 +265,7 @@ class CourseSerializer(serializers.ModelSerializer):
 class CourseLessonSerializer(serializers.ModelSerializer):
     # Original extras
     course_name = serializers.CharField(source='course.course_name', read_only=True)
+    db_id = serializers.IntegerField(source="pk", read_only=True)
 
     # Frontend-friendly aliases
     name = serializers.CharField(source='lesson_name', read_only=True)
@@ -285,6 +286,7 @@ class CourseLessonSerializer(serializers.ModelSerializer):
         model = CourseLesson
         fields = [
             # model fields
+            'db_id',
             'id',
             'lesson_id',
             'lesson_name',
