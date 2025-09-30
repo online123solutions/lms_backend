@@ -6,7 +6,8 @@ from .views import (
 from .TrainerView import (
     TrainerDashboardView, TrainerCourseView,TrainerCourseLessonView,MacroplannerViewSet, MicroplannerViewSet,AssessmentListCreateView,
     TrainerAssessmentReportView,AssessmentReportUpdateView,EvaluationRemarkView,TrainingReportView,LMSEngagementView,RecentActivityView,
-    TrainerQueryListAPIView, TrainerQueryResponseAPIView, TrainerAssignTrainerAPIView,TrainerNotifyView,TrainerSOPListView,TrainerLibraryListView
+    TrainerQueryListAPIView, TrainerQueryResponseAPIView, TrainerAssignTrainerAPIView,TrainerNotifyView,TrainerSOPListView,TrainerLibraryListView,
+    TrainerCourseProgressSummaryView,TrainerLessonProgressView,TrainerLessonProgressDetailView
 )
 
 from .TraineeView import (
@@ -23,7 +24,8 @@ from .EmployeeView import (
 
 from .AdminView import (
     AdminDashboardView,AdminCourseView,AdminCourseLessonView,AdminLMSEngagementView,AdminRecentActivityView,AdminMacroplannerViewSet,
-    AdminMicroplannerViewSet,AdminTrainingReportView,AdminAssessmentReportView,AdminNotifyView,AdminSOPListView,AdminLibraryListView
+    AdminMicroplannerViewSet,AdminTrainingReportView,AdminAssessmentReportView,AdminNotifyView,AdminSOPListView,
+    AdminTrainerCourseProgressForTrainerView,AdminTrainerOverallSummaryView,AdminLibraryListView,AdminTrainerLessonProgressListView
 )
 from rest_framework.routers import DefaultRouter
 
@@ -67,6 +69,9 @@ urlpatterns = [
     # path('trainer/training-report/', TrainingReportView.as_view({'get': 'list'}), name='training-report'),
     path('trainer/sops/', TrainerSOPListView.as_view(), name='trainer-sops'),
     path('trainer/library/', TrainerLibraryListView.as_view(), name='trainer-library'),
+    path("trainer/lesson-progress/", TrainerLessonProgressView.as_view(), name="trainer_lesson_progress"),
+    path("trainer/lesson-progress/<int:id>/", TrainerLessonProgressDetailView.as_view(), name="trainer_lesson_progress_detail"),
+    path("trainer/course-progress-summary/", TrainerCourseProgressSummaryView.as_view(), name="trainer_course_progress_summary"),
     path('trainer/<str:username>/', TrainerDashboardView.as_view(), name='teacher-dashboard'),
 
     # Trainee Urls
@@ -119,5 +124,8 @@ urlpatterns = [
     path('custom_admin/notifications/send/', AdminNotifyView.as_view(), name='admin-send-notification'),
     path("custom_admin/sops/", AdminSOPListView.as_view(),    name="sops-admin"),
     path("custom_admin/library/", AdminLibraryListView.as_view(),    name="library-admin"),
+    path("admin/progress/lesson-rows/", AdminTrainerLessonProgressListView.as_view(), name="admin_lesson_progress_rows"),
+    path("admin/progress/trainer-courses/", AdminTrainerCourseProgressForTrainerView.as_view(), name="admin_trainer_course_summary"),
+    path("admin/progress/trainers-overall/", AdminTrainerOverallSummaryView.as_view(), name="admin_trainers_overall_summary"),
     path('custom_admin/<str:username>', AdminDashboardView.as_view(), name='admin-dashboard'),
 ]

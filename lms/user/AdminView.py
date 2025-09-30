@@ -1,17 +1,19 @@
 from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated,IsAdminUser
 from rest_framework.response import Response
 from django.utils.timezone import now
 from django.shortcuts import get_object_or_404
 from django.db.models.functions import TruncDate
 from user.models import (
     AdminProfile,TraineeProfile, CustomUser,Courses,CourseLesson,Microplanner,Macroplanner,Assessment,AssessmentReport,EvaluationRemark,TrainingReport,UserLoginActivity,QueryResponse,
-    Query,EmployeeProfile,Notification,NotificationReceipt,TraineeLessonCompletion,EmployeeLessonCompletion,AdminProfile,TrainerProfile
+    Query,EmployeeProfile,Notification,NotificationReceipt,TraineeLessonCompletion,EmployeeLessonCompletion,AdminProfile,TrainerProfile,
+    TrainerLessonProgress
 )
 from user.serializers import (
     TrainerSerializer,CourseSerializer, CourseLessonSerializer, MacroplannerSerializer, MicroplannerSerializer,AssessmentSerializer,AssessmentReportSerializer,
     EvaluationRemarkSerializer,TrainingReportSerializer,UserLoginActivitySerializer,QueryResponseSerializer,QuerySerializer,
-    TrainerNotificationRequestSerializer,SentNotificationSerializer,ActiveUserSerializer,AdminSerializer
+    TrainerNotificationRequestSerializer,SentNotificationSerializer,ActiveUserSerializer,AdminSerializer,AdminTrainerSummaryRowSerializer,
+    AdminTrainerLessonProgressSerializer,AdminCourseProgressRowSerializer
 )
 from rest_framework.generics import ListCreateAPIView,RetrieveUpdateAPIView, ListAPIView
 from drf_yasg.utils import swagger_auto_schema
@@ -33,6 +35,7 @@ from quiz.models import Quiz
 from .utils import get_active_users
 from django.db.models import Case, When, Value, CharField, F, Q
 from .views import BaseSOPListView,BaseSLListView
+from datetime import datetime
 
 class AdminDashboardView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1132,3 +1135,225 @@ class AdminSOPListView(BaseSOPListView):
 
 class AdminLibraryListView(BaseSLListView):
     required_role = "admin"
+
+class AdminTrainerLessonProgressListView(ListAPIView):
+    """
+    Admin list of lesson progress rows with filters.
+
+    Query params:
+      - trainer_id (int)
+      - department (str)
+      - course_id (int)
+      - status (not_started|in_progress|completed)
+      - min_date (YYYY-MM-DD)  -> filters last_accessed_at >= min_date
+      - max_date (YYYY-MM-DD)  -> filters last_accessed_at <= max_date
+      - search (matches trainer username, trainer name, lesson title, course title)
+    """
+    permission_classes = [IsAuthenticated, IsAdminUser]
+    serializer_class = AdminTrainerLessonProgressSerializer
+    pagination_class = None  # enable if needed
+
+    def get_queryset(self):
+        qs = (
+            TrainerLessonProgress.objects
+            .select_related("trainer", "trainer__user", "lesson", "lesson__course")
+            .all()
+            .order_by("-last_accessed_at")
+        )
+
+        trainer_id = self.request.query_params.get("trainer_id")
+        department = self.request.query_params.get("department")
+        course_id = self.request.query_params.get("course_id")
+        status = self.request.query_params.get("status")
+        min_date = self.request.query_params.get("min_date")
+        max_date = self.request.query_params.get("max_date")
+        search = self.request.query_params.get("search")
+
+        if trainer_id:
+            qs = qs.filter(trainer_id=trainer_id)
+        if department:
+            qs = qs.filter(trainer__department__iexact=department)
+        if course_id:
+            qs = qs.filter(lesson__course_id=course_id)
+        if status in {"not_started", "in_progress", "completed"}:
+            qs = qs.filter(status=status)
+
+        def parse_date(s):
+            try:
+                return datetime.strptime(s, "%Y-%m-%d")
+            except Exception:
+                return None
+
+        if min_date:
+            dt = parse_date(min_date)
+            if dt:
+                qs = qs.filter(last_accessed_at__date__gte=dt.date())
+        if max_date:
+            dt = parse_date(max_date)
+            if dt:
+                qs = qs.filter(last_accessed_at__date__lte=dt.date())
+
+        if search:
+            qs = qs.filter(
+                Q(trainer__user__username__icontains=search) |
+                Q(trainer__user__first_name__icontains=search) |
+                Q(trainer__user__last_name__icontains=search) |
+                Q(lesson__title__icontains=search) |
+                Q(lesson__course__title__icontains=search)
+            )
+
+        return qs
+
+
+class AdminTrainerCourseProgressForTrainerView(ListAPIView):
+    """
+    Per-course summary for a given trainer_id.
+    """
+    permission_classes = [IsAuthenticated, IsAdminUser]
+    serializer_class = AdminCourseProgressRowSerializer
+    pagination_class = None
+
+    def get_queryset(self):
+        return []  # DRF requires this; we override list()
+
+    def list(self, request, *args, **kwargs):
+        trainer_id = request.query_params.get("trainer_id")
+        if not trainer_id:
+            return Response({"detail": "trainer_id is required"}, status=400)
+
+        trainer = TrainerProfile.objects.select_related("user").filter(id=trainer_id).first()
+        if not trainer:
+            return Response({"detail": "Trainer not found"}, status=404)
+
+        courses = Courses.objects.filter(department=trainer.department, display_on_frontend=True).only("id", "title")
+
+        total_by_course = dict(
+            CourseLesson.objects
+            .filter(course__in=courses, display_on_frontend=True)
+            .values("course_id")
+            .annotate(total=Count("id"))
+            .values_list("course_id", "total")
+        )
+
+        completed_by_course = dict(
+            TrainerLessonProgress.objects
+            .filter(
+                trainer=trainer,
+                lesson__course__in=courses,
+                lesson__display_on_frontend=True,
+                status="completed",
+            )
+            .values("lesson__course_id")
+            .annotate(done=Count("id"))
+            .values_list("lesson__course_id", "done")
+        )
+
+        payload = []
+        for c in courses:
+            total = int(total_by_course.get(c.id, 0) or 0)
+            done = int(completed_by_course.get(c.id, 0) or 0)
+            percent = int(round((done / total) * 100)) if total else 0
+            payload.append({
+                "course_id": c.id,
+                "course_title": getattr(c, "title", f"Course {c.id}"),
+                "total_lessons": total,
+                "completed_lessons": done,
+                "completion_percent": percent,
+            })
+
+        payload.sort(key=lambda x: (-x["completion_percent"], x["course_title"].lower()))
+        return Response(payload)
+
+
+class AdminTrainerOverallSummaryView(ListAPIView):
+    """
+    Overall completion for each trainer (optionally filter by department).
+    Returns one row per trainer with totals across all visible courses in their department.
+
+    Query params:
+      - department (str, optional)
+    """
+    permission_classes = [IsAuthenticated, IsAdminUser]
+    serializer_class = AdminTrainerSummaryRowSerializer
+    pagination_class = None
+
+    def get_queryset(self):
+        return []
+
+    def list(self, request, *args, **kwargs):
+        department = request.query_params.get("department")
+
+        trainers = TrainerProfile.objects.select_related("user")
+        if department:
+            trainers = trainers.filter(department__iexact=department)
+
+        # Gather all courses per department
+        # To avoid N+1, we’ll compute per-trainer using two passes of dicts.
+
+        # Total lessons by department-course
+        lessons_by_course = (
+            CourseLesson.objects
+            .filter(course__display_on_frontend=True, display_on_frontend=True)
+            .values("course_id", "course__department")
+            .annotate(total=Count("id"))
+        )
+
+        # Map dept -> {course_id: total}
+        totals_by_dept = {}
+        for row in lessons_by_course:
+            dept = row["course__department"]
+            course_id = row["course_id"]
+            totals_by_dept.setdefault(dept, {})[course_id] = row["total"]
+
+        # Completed by trainer-course
+        completed_qs = (
+            TrainerLessonProgress.objects
+            .filter(
+                lesson__display_on_frontend=True,
+                lesson__course__display_on_frontend=True,
+                status="completed",
+            )
+            .values("trainer_id", "lesson__course_id")
+            .annotate(done=Count("id"))
+        )
+
+        # Map (trainer_id) -> {course_id: done}
+        completed_by_trainer = {}
+        for row in completed_qs:
+            tid = row["trainer_id"]
+            cid = row["lesson__course_id"]
+            completed_by_trainer.setdefault(tid, {})[cid] = row["done"]
+
+        payload = []
+        for t in trainers:
+            dept_totals = totals_by_dept.get(t.department, {})  # totals for courses in this dept
+            if not dept_totals:
+                total_lessons = 0
+            else:
+                # Only count courses that exist in this department
+                total_lessons = sum(dept_totals.values())
+
+            trainer_completed_map = completed_by_trainer.get(t.id, {})
+            completed_lessons = 0
+            if dept_totals:
+                # Only count completed for courses in this department
+                for cid, total in dept_totals.items():
+                    completed_lessons += int(trainer_completed_map.get(cid, 0))
+
+            percent = int(round((completed_lessons / total_lessons) * 100)) if total_lessons else 0
+
+            u = t.user
+            full = f"{getattr(u, 'first_name', '')} {getattr(u, 'last_name', '')}".strip()
+            payload.append({
+                "trainer_id": t.id,
+                "trainer_username": u.username,
+                "trainer_name": full or u.username,
+                "department": t.department or "",
+                "total_lessons": int(total_lessons),
+                "completed_lessons": int(completed_lessons),
+                "completion_percent": percent,
+            })
+
+        # Sort by completion desc, then name
+        payload.sort(key=lambda x: (-x["completion_percent"], x["trainer_name"].lower()))
+        return Response(payload)

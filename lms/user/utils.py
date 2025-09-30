@@ -1,6 +1,6 @@
 from django.contrib.sessions.models import Session
 from django.utils.timezone import now
-from user.models import EmployeeProfile,TraineeProfile,CustomUser
+from user.models import EmployeeProfile,TrainerProfile,CustomUser
 from django.db.models import Q
 from django.utils import timezone
 from django.apps import apps
@@ -63,3 +63,11 @@ def get_user_department(user) -> str:
             return getattr(dept, "code") or ""
         return dept or ""
     return ""
+
+def get_trainer_profile(user):
+    # Prefer the attribute if it exists
+    tp = getattr(user, "trainer_profile", None)
+    if tp:
+        return tp
+    # Fallback by query (covers any naming differences)
+    return TrainerProfile.objects.filter(user=user).first()

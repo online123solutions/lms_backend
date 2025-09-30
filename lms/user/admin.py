@@ -2,7 +2,7 @@ from django.contrib import admin
 from .models import (
     CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile,Courses, CourseLesson,Macroplanner,Microplanner,Subject,Lesson,Query,QueryResponse,
     UserLoginActivity,AssessmentReport,Notification,NotificationReceipt,EmployeeLessonCompletion,TraineeLessonCompletion,AdminProfile,SOP,
-    StandardLibraryItem
+    StandardLibraryItem,TrainerLessonProgress
     )
 from django_admin_listfilter_dropdown.filters import DropdownFilter
 
@@ -97,3 +97,64 @@ class StandardLibraryItemAdmin(admin.ModelAdmin):
     list_filter  = ("target_role", "department", "is_active", "created_at")
     search_fields = ("title", "note")
     readonly_fields = ("created_at",)
+
+@admin.register(TrainerLessonProgress)
+class TrainerLessonProgressAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "trainer_username", "trainer_name", "trainer_department",
+        "course_name_col", "lesson_name_col",
+        "status", "percent",
+        "started_at", "completed_at", "last_accessed_at",
+    )
+    list_display_links = ("id", "lesson_name_col")
+    ordering = ("-last_accessed_at",)
+    list_per_page = 50
+
+    list_filter = (
+        "status",
+        "trainer__department",
+        "lesson__course",
+        ("started_at", admin.DateFieldListFilter),
+        ("completed_at", admin.DateFieldListFilter),
+        ("last_accessed_at", admin.DateFieldListFilter),
+    )
+
+    search_fields = (
+        "trainer__user__username",
+        "trainer__user__first_name",
+        "trainer__user__last_name",
+        "lesson__lesson_name",
+        "lesson__course__course_name",
+        "lesson__lesson_id",
+        "lesson__course__course_id",
+    )
+
+    list_select_related = ("trainer", "trainer__user", "lesson", "lesson__course")
+    # Either keep autocomplete (ensure related admins have search_fields)...
+    # autocomplete_fields = ("trainer", "lesson")
+    # ...or use raw_id_fields to avoid admin.E040:
+    raw_id_fields = ("trainer", "lesson")
+    date_hierarchy = "last_accessed_at"
+
+    @admin.display(description="Username")
+    def trainer_username(self, obj):
+        return obj.trainer.user.username
+
+    @admin.display(description="Trainer Name")
+    def trainer_name(self, obj):
+        u = obj.trainer.user
+        full = f"{getattr(u, 'first_name','')} {getattr(u, 'last_name','')}".strip()
+        return full or u.username
+
+    @admin.display(description="Department")
+    def trainer_department(self, obj):
+        return obj.trainer.department
+
+    @admin.display(description="Course")
+    def course_name_col(self, obj):
+        return getattr(obj.lesson.course, "course_name", f"Course #{obj.lesson.course_id}")
+
+    @admin.display(description="Lesson")
+    def lesson_name_col(self, obj):
+        return getattr(obj.lesson, "lesson_name", f"Lesson #{obj.lesson_id}")

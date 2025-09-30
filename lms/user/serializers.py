@@ -2,7 +2,8 @@ from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from .models import (
     CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile,AdminProfile,Courses, CourseLesson,Macroplanner,Microplanner,Assessment, AssessmentReport,EvaluationRemark
-    ,TrainingReport,UserLoginActivity,Query,QueryResponse,Subject,Lesson,Notification,NotificationReceipt,SOP,StandardLibraryItem
+    ,TrainingReport,UserLoginActivity,Query,QueryResponse,Subject,Lesson,Notification,NotificationReceipt,SOP,StandardLibraryItem,
+    TrainerLessonProgress
 )
 from django.contrib.auth import authenticate
 from quiz.serializers import ResultSerializer
@@ -11,6 +12,7 @@ from quiz.models import Quiz,Result
 from urllib.parse import urljoin
 from django.conf import settings
 from django.db import IntegrityError
+from .utils import get_trainer_profile
 
 class CustomUserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -840,3 +842,114 @@ class EmployeeProgressSerializer(serializers.Serializer):
     name = serializers.CharField()
     totals = serializers.DictField()
     subjects = serializers.ListField(child=serializers.DictField())
+
+class TrainerLessonProgressWriteSerializer(serializers.ModelSerializer):
+    action = serializers.ChoiceField(choices=[("start","start"),("complete","complete")], required=False)
+
+    class Meta:
+        model = TrainerLessonProgress
+        fields = ["id", "lesson", "status", "percent", "action"]
+
+    def validate(self, attrs):
+        request = self.context["request"]
+        trainer = get_trainer_profile(request.user)
+        if not trainer:
+            raise serializers.ValidationError("Trainer profile not found for user.")
+        # Optional: ensure lesson belongs to same department
+        lesson = attrs.get("lesson") or getattr(self.instance, "lesson", None)
+        if lesson and lesson.course.department != trainer.department:
+            raise serializers.ValidationError("You cannot update lessons outside your department.")
+        return attrs
+
+    def create(self, validated_data):
+        action = validated_data.pop("action", None)
+        trainer = get_trainer_profile(self.context["request"].user)
+        obj, _ = TrainerLessonProgress.objects.get_or_create(
+            trainer=trainer, lesson=validated_data["lesson"]
+        )
+        for k, v in validated_data.items():
+            setattr(obj, k, v)
+        if action == "start":
+            obj.mark_started()
+        elif action == "complete":
+            obj.mark_started()
+            obj.mark_completed()
+        obj.save()
+        return obj
+
+    def update(self, instance, validated_data):
+        action = validated_data.pop("action", None)
+        for k, v in validated_data.items():
+            setattr(instance, k, v)
+        if action == "start":
+            instance.mark_started()
+        elif action == "complete":
+            instance.mark_started()
+            instance.mark_completed()
+        instance.save()
+        return instance
+
+
+
+class CourseProgressSummarySerializer(serializers.Serializer):
+    """
+    Read-only summary per course (subject) for the current trainer.
+    """
+    course_id = serializers.IntegerField()
+    course_title = serializers.CharField()
+    total_lessons = serializers.IntegerField()
+    completed_lessons = serializers.IntegerField()
+    completion_percent = serializers.IntegerField()
+
+class AdminTrainerLessonProgressSerializer(serializers.ModelSerializer):
+    trainer_id = serializers.IntegerField(source="trainer.id", read_only=True)
+    trainer_user_id = serializers.IntegerField(source="trainer.user.id", read_only=True)
+    trainer_username = serializers.CharField(source="trainer.user.username", read_only=True)
+    trainer_name = serializers.SerializerMethodField()
+    department = serializers.CharField(source="trainer.department", read_only=True)
+
+    course_id = serializers.IntegerField(source="lesson.course.id", read_only=True)
+    course_title = serializers.CharField(source="lesson.course.title", read_only=True)
+    lesson_id = serializers.IntegerField(source="lesson.id", read_only=True)
+    lesson_title = serializers.CharField(source="lesson.title", read_only=True)
+
+    class Meta:
+        model = TrainerLessonProgress
+        fields = [
+            "id",
+            "trainer_id", "trainer_user_id", "trainer_username", "trainer_name", "department",
+            "course_id", "course_title",
+            "lesson_id", "lesson_title",
+            "status", "percent",
+            "started_at", "completed_at", "last_accessed_at",
+        ]
+
+    def get_trainer_name(self, obj):
+        # Prefer explicit name fields if present, else username
+        u = obj.trainer.user
+        full = f"{getattr(u, 'first_name', '')} {getattr(u, 'last_name', '')}".strip()
+        return full or u.username
+
+
+class AdminCourseProgressRowSerializer(serializers.Serializer):
+    """
+    Read serializer for per-course progress summary for a single trainer.
+    """
+    course_id = serializers.IntegerField()
+    course_title = serializers.CharField()
+    total_lessons = serializers.IntegerField()
+    completed_lessons = serializers.IntegerField()
+    completion_percent = serializers.IntegerField()
+
+
+class AdminTrainerSummaryRowSerializer(serializers.Serializer):
+    """
+    Row serializer for a trainer’s overall summary (across courses).
+    """
+    trainer_id = serializers.IntegerField()
+    trainer_username = serializers.CharField()
+    trainer_name = serializers.CharField()
+    department = serializers.CharField()
+    total_lessons = serializers.IntegerField()
+    completed_lessons = serializers.IntegerField()
+    completion_percent = serializers.IntegerField()

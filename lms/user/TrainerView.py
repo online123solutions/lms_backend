@@ -6,12 +6,13 @@ from django.shortcuts import get_object_or_404
 from django.db.models.functions import TruncDate
 from user.models import (
     TrainerProfile,TraineeProfile, CustomUser,Courses,CourseLesson,Microplanner,Macroplanner,Assessment,AssessmentReport,EvaluationRemark,TrainingReport,UserLoginActivity,QueryResponse,
-    Query,EmployeeProfile,Notification,NotificationReceipt,TraineeLessonCompletion,EmployeeLessonCompletion
+    Query,EmployeeProfile,Notification,NotificationReceipt,TraineeLessonCompletion,EmployeeLessonCompletion,TrainerLessonProgress
 )
 from user.serializers import (
     TrainerSerializer,CourseSerializer, CourseLessonSerializer, MacroplannerSerializer, MicroplannerSerializer,AssessmentSerializer,AssessmentReportSerializer,
     EvaluationRemarkSerializer,TrainingReportSerializer,UserLoginActivitySerializer,QueryResponseSerializer,QuerySerializer,
-    EmployeeSerializer,TrainerNotificationRequestSerializer,SentNotificationSerializer,ActiveUserSerializer
+    EmployeeSerializer,TrainerNotificationRequestSerializer,SentNotificationSerializer,ActiveUserSerializer,TrainerLessonProgressWriteSerializer,
+    CourseProgressSummarySerializer
 )
 from rest_framework.generics import ListCreateAPIView,RetrieveUpdateAPIView, ListAPIView
 from drf_yasg.utils import swagger_auto_schema
@@ -30,7 +31,7 @@ from django.db.models import Q, Count
 from rest_framework.pagination import PageNumberPagination
 from django.core.exceptions import FieldDoesNotExist
 from quiz.models import Quiz
-from .utils import get_active_users
+from .utils import get_active_users,get_trainer_profile
 from .views import BaseSLListView,BaseSOPListView
 
 class TrainerDashboardView(APIView):
@@ -964,3 +965,83 @@ class TrainerLibraryListView(BaseSLListView):
 
 class TrainerSOPListView(BaseSOPListView):
     REQUIRED_ROLE = "trainer"
+
+
+class TrainerLessonProgressView(ListCreateAPIView):
+    serializer_class = TrainerLessonProgressWriteSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        trainer = get_trainer_profile(self.request.user)
+        if not trainer:
+            return TrainerLessonProgress.objects.none()
+        return (
+            TrainerLessonProgress.objects
+            .select_related("lesson", "lesson__course")
+            .filter(trainer=trainer)  # keep it simple; add extra filters only if you need
+            .order_by("-last_accessed_at")
+        )
+
+class TrainerCourseProgressSummaryView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def list(self, request, *args, **kwargs):
+        trainer = get_trainer_profile(request.user)
+        if not trainer:
+            return Response([])
+
+        courses = Courses.objects.filter(
+            department=trainer.department,
+            display_on_frontend=True,
+        ).only("id", "course_id", "course_name")
+
+        lesson_counts = dict(
+            CourseLesson.objects
+            .filter(course__in=courses, display_on_frontend=True)
+            .values("course_id")
+            .annotate(total=Count("id"))
+            .values_list("course_id", "total")
+        )
+
+        completed_by_course = dict(
+            TrainerLessonProgress.objects
+            .filter(trainer=trainer, lesson__course__in=courses, status="completed")
+            .values("lesson__course_id")
+            .annotate(done=Count("id"))
+            .values_list("lesson__course_id", "done")
+        )
+
+        payload = []
+        for c in courses:
+            total = int(lesson_counts.get(c.id, 0) or 0)
+            done = int(completed_by_course.get(c.id, 0) or 0)
+            percent = int(round((done / total) * 100)) if total else 0
+            payload.append({
+                "course_id": c.id,
+                "course_code": c.course_id,
+                "course_name": c.course_name,
+                "total_lessons": total,
+                "completed_lessons": done,
+                "completion_percent": percent,
+            })
+
+        payload.sort(key=lambda x: (-x["completion_percent"], x["course_name"].lower()))
+        return Response(payload)
+
+
+class TrainerLessonProgressDetailView(RetrieveUpdateAPIView):
+    """
+    PATCH/PUT to update an existing progress row by id.
+    """
+    serializer_class = TrainerLessonProgressWriteSerializer
+    permission_classes = [IsAuthenticated]
+    queryset = TrainerLessonProgress.objects.select_related("lesson", "lesson__course")
+    lookup_field = "id"
+
+    def get_queryset(self):
+        trainer = getattr(self.request.user, "trainer_profile", None)
+        if not trainer:
+            return TrainerLessonProgress.objects.none()
+        return self.queryset.filter(trainer=trainer, lesson__course__department=trainer.department)

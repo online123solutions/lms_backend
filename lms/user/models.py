@@ -681,3 +681,42 @@ class StandardLibraryItem(models.Model):
 
     def __str__(self):
         return self.title
+    
+class TrainerLessonProgress(models.Model):
+    """
+    One row per (trainer, lesson). Tracks start/completion.
+    """
+    trainer = models.ForeignKey(TrainerProfile, on_delete=models.CASCADE, related_name="lesson_progress")
+    lesson = models.ForeignKey(CourseLesson, on_delete=models.CASCADE, related_name="trainer_progress")
+
+    # Basic lifecycle flags
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    # Optional status & percent for richer UI
+    STATUS_CHOICES = (
+        ("not_started", "Not Started"),
+        ("in_progress", "In Progress"),
+        ("completed", "Completed"),
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="not_started")
+    percent = models.PositiveSmallIntegerField(default=0)  # 0..100
+    last_accessed_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("trainer", "lesson")
+        indexes = [
+            models.Index(fields=["trainer", "lesson"]),
+            models.Index(fields=["status"]),
+        ]
+
+    def mark_started(self):
+        if not self.started_at:
+            self.started_at = timezone.now()
+        if self.status == "not_started":
+            self.status = "in_progress"
+
+    def mark_completed(self):
+        self.completed_at = timezone.now()
+        self.status = "completed"
+        self.percent = 100
