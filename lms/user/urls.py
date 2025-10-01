@@ -59,6 +59,7 @@ urlpatterns = [
     path("trainer/assessment-reports/", TrainerAssessmentReportView.as_view(), name="trainer-assessment-reports"),
     path('trainer/assessment-report/<int:pk>/', AssessmentReportUpdateView.as_view(), name='update-assessment-report'),
     path('trainer/evaluation-remarks/', EvaluationRemarkView.as_view(), name='evaluation-remarks'),
+    path("trainer/notifications/", TrainerNotifyView.as_view()),
     path('trainer/notifications/send/', TrainerNotifyView.as_view(), name='trainer-send-notification'),
     path('trainer/recent_activity/', RecentActivityView.as_view(), name='teacher_recent_activity'),
     path('trainer/lms-engagement/', LMSEngagementView.as_view(), name='lms-engagement'),
