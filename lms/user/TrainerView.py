@@ -12,7 +12,7 @@ from user.serializers import (
     TrainerSerializer,CourseSerializer, CourseLessonSerializer, MacroplannerSerializer, MicroplannerSerializer,AssessmentSerializer,AssessmentReportSerializer,
     EvaluationRemarkSerializer,TrainingReportSerializer,UserLoginActivitySerializer,QueryResponseSerializer,QuerySerializer,
     EmployeeSerializer,TrainerNotificationRequestSerializer,SentNotificationSerializer,ActiveUserSerializer,TrainerLessonProgressWriteSerializer,
-    InboxNotificationSerializer
+    InboxNotificationSerializer,TrainerLessonProgressReadSerializer
 )
 from rest_framework.generics import ListCreateAPIView,RetrieveUpdateAPIView, ListAPIView
 from drf_yasg.utils import swagger_auto_schema
@@ -1024,10 +1024,18 @@ class TrainerSOPListView(BaseSOPListView):
     REQUIRED_ROLE = "trainer"
 
 
+
 class TrainerLessonProgressView(ListCreateAPIView):
-    serializer_class = TrainerLessonProgressWriteSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = None
+
+    def get_serializer_class(self):
+        # GET -> read serializer (includes names), POST -> write serializer
+        return (
+            TrainerLessonProgressReadSerializer
+            if self.request.method == "GET"
+            else TrainerLessonProgressWriteSerializer
+        )
 
     def get_queryset(self):
         trainer = get_trainer_profile(self.request.user)
@@ -1035,8 +1043,8 @@ class TrainerLessonProgressView(ListCreateAPIView):
             return TrainerLessonProgress.objects.none()
         return (
             TrainerLessonProgress.objects
-            .select_related("lesson", "lesson__course")
-            .filter(trainer=trainer)  # keep it simple; add extra filters only if you need
+            .select_related("lesson", "lesson__course")   # <- important for names and performance
+            .filter(trainer=trainer)
             .order_by("-last_accessed_at")
         )
 
@@ -1103,16 +1111,23 @@ class TrainerCourseProgressSummaryView(ListAPIView):
 
 
 class TrainerLessonProgressDetailView(RetrieveUpdateAPIView):
-    """
-    PATCH/PUT to update an existing progress row by id.
-    """
-    serializer_class = TrainerLessonProgressWriteSerializer
     permission_classes = [IsAuthenticated]
-    queryset = TrainerLessonProgress.objects.select_related("lesson", "lesson__course")
     lookup_field = "id"
+
+    def get_serializer_class(self):
+        # GET -> read serializer, PATCH/PUT -> write serializer
+        return (
+            TrainerLessonProgressReadSerializer
+            if self.request.method == "GET"
+            else TrainerLessonProgressWriteSerializer
+        )
 
     def get_queryset(self):
         trainer = getattr(self.request.user, "trainer_profile", None)
         if not trainer:
             return TrainerLessonProgress.objects.none()
-        return self.queryset.filter(trainer=trainer, lesson__course__department=trainer.department)
+        return (
+            TrainerLessonProgress.objects
+            .select_related("lesson", "lesson__course")
+            .filter(trainer=trainer, lesson__course__department=trainer.department)
+        )

@@ -903,6 +903,26 @@ class CourseProgressSummarySerializer(serializers.Serializer):
     completed_lessons = serializers.IntegerField()
     completion_percent = serializers.IntegerField()
 
+class TrainerLessonProgressReadSerializer(serializers.ModelSerializer):
+    # Flattened, read-only fields pulled from related models
+    lesson_id    = serializers.IntegerField(source="lesson.id", read_only=True)
+    lesson_name  = serializers.CharField(source="lesson.lesson_name", read_only=True)
+    course_id    = serializers.IntegerField(source="lesson.course.id", read_only=True)
+    course_code  = serializers.CharField(source="lesson.course.course_id", read_only=True)   # your unique string
+    course_name  = serializers.CharField(source="lesson.course.course_name", read_only=True)
+
+    class Meta:
+        model  = TrainerLessonProgress
+        fields = [
+            "id",
+            "lesson_id", "lesson_name",
+            "course_id", "course_code", "course_name",
+            "status", "percent",
+            "started_at", "completed_at", "last_accessed_at",
+        ]
+        read_only_fields = fields  # this entire serializer is read-only
+
+
 class AdminTrainerLessonProgressSerializer(serializers.ModelSerializer):
     trainer_id = serializers.IntegerField(source="trainer.id", read_only=True)
     trainer_user_id = serializers.IntegerField(source="trainer.user.id", read_only=True)
