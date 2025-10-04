@@ -1205,7 +1205,6 @@ class AdminTrainerLessonProgressListView(ListAPIView):
 
         return qs
 
-
 class AdminTrainerCourseProgressView(ListAPIView):
     """
     Admin: per-course progress for ALL trainers (no trainer_id needed).
@@ -1215,20 +1214,35 @@ class AdminTrainerCourseProgressView(ListAPIView):
       - ?only_approved=true    -> require is_approved on Courses & CourseLesson
       - ?frontend_only=true    -> require display_on_frontend on Courses & CourseLesson
     """
+
     serializer_class = AdminCourseProgressRowSerializer
+    permission_classes = [IsAuthenticated]
     pagination_class = None
 
     def get_queryset(self):
-        return []  # DRF requirement; we construct payload manually
+        # Avoid Swagger schema crash
+        if getattr(self, "swagger_fake_view", False):
+            return Courses.objects.none()
+        return []
 
     def list(self, request, *args, **kwargs):
+        user = request.user
+
+        # ✅ Prevent AnonymousUser issue
+        if not user.is_authenticated:
+            return Response({"detail": "Authentication credentials were not provided."}, status=401)
+
+        # ✅ Restrict to admins only
+        if getattr(user, "role", "").lower() != "admin":
+            return Response({"detail": "Only admin users can access this endpoint."}, status=403)
+
         qp = request.query_params
         trainer_id = qp.get("trainer_id")
         dept_filter = qp.get("department")
-        only_approved = (qp.get("only_approved", "false").lower() in ("1", "true", "yes"))
-        frontend_only = (qp.get("frontend_only", "true").lower() in ("1", "true", "yes"))
+        only_approved = qp.get("only_approved", "false").lower() in ("1", "true", "yes")
+        frontend_only = qp.get("frontend_only", "true").lower() in ("1", "true", "yes")
 
-        # Trainers to include
+        # Trainers
         trainers_qs = TrainerProfile.objects.select_related("user")
         if trainer_id:
             trainers_qs = trainers_qs.filter(id=trainer_id)
@@ -1237,16 +1251,14 @@ class AdminTrainerCourseProgressView(ListAPIView):
 
         trainers = list(trainers_qs)
         if not trainers:
-            if trainer_id:
-                return Response({"detail": "Trainer not found"}, status=404)
             return Response([])
 
-        # Collect departments (string values)
+        # Departments from trainers
         departments = {getattr(t, "department", None) for t in trainers if getattr(t, "department", None)}
         if not departments:
             return Response([])
 
-        # Courses for these departments
+        # Courses
         course_filters = Q(department__in=list(departments))
         if frontend_only:
             course_filters &= Q(display_on_frontend=True)
@@ -1257,12 +1269,11 @@ class AdminTrainerCourseProgressView(ListAPIView):
             "id", "course_id", "course_name", "department", "display_on_frontend", "is_approved"
         )
 
-        # Group courses by department (string)
         courses_by_dept = {}
         for c in courses_qs:
             courses_by_dept.setdefault(c.department, []).append(c)
 
-        # Lessons total per course
+        # Lessons count
         lesson_filters = Q(course__in=courses_qs)
         if frontend_only:
             lesson_filters &= Q(display_on_frontend=True)
@@ -1277,7 +1288,7 @@ class AdminTrainerCourseProgressView(ListAPIView):
             .values_list("course_id", "total")
         )
 
-        # Completed lessons per (trainer, course_pk)
+        # Completed lessons
         progress_filters = Q(
             lesson__course__in=courses_qs,
             trainer__in=trainers_qs,
@@ -1315,18 +1326,16 @@ class AdminTrainerCourseProgressView(ListAPIView):
                     "trainer_username": getattr(getattr(t, "user", None), "username", ""),
                     "trainer_name": name_for(t),
                     "trainer_department": dept or "",
-
-                    "course_pk": c.id,                # numeric PK
-                    "course_id": c.course_id,         # your string identifier
+                    "course_pk": c.id,
+                    "course_id": c.course_id,
                     "course_name": c.course_name,
-
                     "total_lessons": total,
                     "completed_lessons": done,
                     "completion_percent": percent,
                 })
 
         payload.sort(key=lambda x: (
-            -(x["completion_percent"]),
+            -x["completion_percent"],
             x["trainer_name"].lower(),
             x["course_name"].lower(),
         ))
