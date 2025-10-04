@@ -1209,18 +1209,17 @@ class AdminTrainerCourseProgressView(ListAPIView):
     """
     Admin: per-course progress for ALL trainers (no trainer_id needed).
     Optional filters:
-      - ?trainer_id=<int>      -> restrict to a single trainer
-      - ?department=<str>      -> restrict trainers/courses to a department value
-      - ?only_approved=true    -> require is_approved on Courses & CourseLesson
-      - ?frontend_only=true    -> require display_on_frontend on Courses & CourseLesson
+      - ?trainer_id=<int>
+      - ?department=<str>
+      - ?only_approved=true
+      - ?frontend_only=true
     """
-
+    permission_classes = [IsAuthenticated]            # ✅ require auth
     serializer_class = AdminCourseProgressRowSerializer
-    permission_classes = [IsAuthenticated]
     pagination_class = None
 
     def get_queryset(self):
-        # Avoid Swagger schema crash
+        # ✅ avoid schema gen crash when drf_yasg calls without a user
         if getattr(self, "swagger_fake_view", False):
             return Courses.objects.none()
         return []
@@ -1228,13 +1227,11 @@ class AdminTrainerCourseProgressView(ListAPIView):
     def list(self, request, *args, **kwargs):
         user = request.user
 
-        # ✅ Prevent AnonymousUser issue
+        # ✅ explicit auth/role checks (return 401/403 instead of 500)
         if not user.is_authenticated:
-            return Response({"detail": "Authentication credentials were not provided."}, status=401)
-
-        # ✅ Restrict to admins only
+            return Response({"detail": "Authentication required."}, status=401)
         if getattr(user, "role", "").lower() != "admin":
-            return Response({"detail": "Only admin users can access this endpoint."}, status=403)
+            return Response({"detail": "Admin only."}, status=403)
 
         qp = request.query_params
         trainer_id = qp.get("trainer_id")
@@ -1242,7 +1239,6 @@ class AdminTrainerCourseProgressView(ListAPIView):
         only_approved = qp.get("only_approved", "false").lower() in ("1", "true", "yes")
         frontend_only = qp.get("frontend_only", "true").lower() in ("1", "true", "yes")
 
-        # Trainers
         trainers_qs = TrainerProfile.objects.select_related("user")
         if trainer_id:
             trainers_qs = trainers_qs.filter(id=trainer_id)
@@ -1253,12 +1249,10 @@ class AdminTrainerCourseProgressView(ListAPIView):
         if not trainers:
             return Response([])
 
-        # Departments from trainers
-        departments = {getattr(t, "department", None) for t in trainers if getattr(t, "department", None)}
+        departments = {t.department for t in trainers if getattr(t, "department", None)}
         if not departments:
             return Response([])
 
-        # Courses
         course_filters = Q(department__in=list(departments))
         if frontend_only:
             course_filters &= Q(display_on_frontend=True)
@@ -1273,7 +1267,6 @@ class AdminTrainerCourseProgressView(ListAPIView):
         for c in courses_qs:
             courses_by_dept.setdefault(c.department, []).append(c)
 
-        # Lessons count
         lesson_filters = Q(course__in=courses_qs)
         if frontend_only:
             lesson_filters &= Q(display_on_frontend=True)
@@ -1288,7 +1281,6 @@ class AdminTrainerCourseProgressView(ListAPIView):
             .values_list("course_id", "total")
         )
 
-        # Completed lessons
         progress_filters = Q(
             lesson__course__in=courses_qs,
             trainer__in=trainers_qs,
@@ -1307,12 +1299,13 @@ class AdminTrainerCourseProgressView(ListAPIView):
             .values_list("trainer_id", "lesson__course_id", "done")
         )
 
-        def name_for(tr):
-            u = getattr(tr, "user", None)
-            full = (u.get_full_name() if u and hasattr(u, "get_full_name") else "") or ""
-            if full.strip():
-                return full.strip()
-            return getattr(u, "username", f"trainer-{tr.id}")
+        def trainer_name(t):
+            u = getattr(t, "user", None)
+            if u and hasattr(u, "get_full_name"):
+                n = u.get_full_name() or ""
+                if n.strip():
+                    return n.strip()
+            return getattr(u, "username", f"trainer-{t.id}")
 
         payload = []
         for t in trainers:
@@ -1324,7 +1317,7 @@ class AdminTrainerCourseProgressView(ListAPIView):
                 payload.append({
                     "trainer_id": t.id,
                     "trainer_username": getattr(getattr(t, "user", None), "username", ""),
-                    "trainer_name": name_for(t),
+                    "trainer_name": trainer_name(t),
                     "trainer_department": dept or "",
                     "course_pk": c.id,
                     "course_id": c.course_id,
@@ -1334,11 +1327,7 @@ class AdminTrainerCourseProgressView(ListAPIView):
                     "completion_percent": percent,
                 })
 
-        payload.sort(key=lambda x: (
-            -x["completion_percent"],
-            x["trainer_name"].lower(),
-            x["course_name"].lower(),
-        ))
+        payload.sort(key=lambda x: (-x["completion_percent"], x["trainer_name"].lower(), x["course_name"].lower()))
         return Response(payload)
 
 class AdminTrainerOverallSummaryView(ListAPIView):
