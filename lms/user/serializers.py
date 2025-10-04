@@ -924,33 +924,57 @@ class TrainerLessonProgressReadSerializer(serializers.ModelSerializer):
 
 
 class AdminTrainerLessonProgressSerializer(serializers.ModelSerializer):
-    trainer_id = serializers.IntegerField(source="trainer.id", read_only=True)
-    trainer_user_id = serializers.IntegerField(source="trainer.user.id", read_only=True)
-    trainer_username = serializers.CharField(source="trainer.user.username", read_only=True)
-    trainer_name = serializers.SerializerMethodField()
-    department = serializers.CharField(source="trainer.department", read_only=True)
+    # Trainer meta
+    trainer_user_id   = serializers.IntegerField(source="trainer.user.id", read_only=True)
+    trainer_username  = serializers.CharField(source="trainer.user.username", read_only=True)
+    trainer_name      = serializers.SerializerMethodField()
+    department        = serializers.CharField(source="trainer.department", read_only=True)
 
-    course_id = serializers.IntegerField(source="lesson.course.id", read_only=True)
-    course_title = serializers.CharField(source="lesson.course.title", read_only=True)
-    lesson_id = serializers.IntegerField(source="lesson.id", read_only=True)
-    lesson_title = serializers.CharField(source="lesson.title", read_only=True)
+    # Course meta (both numeric PK and your string code)
+    course_id         = serializers.IntegerField(source="lesson.course.id", read_only=True)          # numeric PK
+    course_code       = serializers.CharField(source="lesson.course.course_id", read_only=True)      # your string code
+    course_name       = serializers.CharField(source="lesson.course.course_name", read_only=True)
+
+    # Lesson meta
+    lesson_id         = serializers.IntegerField(source="lesson.id", read_only=True)
+    lesson_name       = serializers.CharField(source="lesson.lesson_name", read_only=True)
 
     class Meta:
         model = TrainerLessonProgress
         fields = [
             "id",
-            "trainer_id", "trainer_user_id", "trainer_username", "trainer_name", "department",
-            "course_id", "course_title",
-            "lesson_id", "lesson_title",
-            "status", "percent",
-            "started_at", "completed_at", "last_accessed_at",
+
+            # trainer
+            "trainer_id",
+            "trainer_user_id",
+            "trainer_username",
+            "trainer_name",
+            "department",
+
+            # course
+            "course_id",
+            "course_code",
+            "course_name",
+
+            # lesson
+            "lesson_id",
+            "lesson_name",
+
+            # progress
+            "status",
+            "percent",
+            "started_at",
+            "completed_at",
+            "last_accessed_at",
         ]
 
     def get_trainer_name(self, obj):
-        # Prefer explicit name fields if present, else username
-        u = obj.trainer.user
-        full = f"{getattr(u, 'first_name', '')} {getattr(u, 'last_name', '')}".strip()
-        return full or u.username
+        u = getattr(obj.trainer, "user", None)
+        if u and hasattr(u, "get_full_name"):
+            full = (u.get_full_name() or "").strip()
+            if full:
+                return full
+        return getattr(u, "username", "") or f"trainer-{obj.trainer_id}"
 
 class AdminCourseProgressRowSerializer(serializers.Serializer):
     trainer_id = serializers.IntegerField()

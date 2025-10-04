@@ -1138,21 +1138,9 @@ class AdminLibraryListView(BaseSLListView):
     required_role = "admin"
 
 class AdminTrainerLessonProgressListView(ListAPIView):
-    """
-    Admin list of lesson progress rows with filters.
-
-    Query params:
-      - trainer_id (int)
-      - department (str)
-      - course_id (int)
-      - status (not_started|in_progress|completed)
-      - min_date (YYYY-MM-DD)  -> filters last_accessed_at >= min_date
-      - max_date (YYYY-MM-DD)  -> filters last_accessed_at <= max_date
-      - search (matches trainer username, trainer name, lesson title, course title)
-    """
     permission_classes = [IsAuthenticated]
     serializer_class = AdminTrainerLessonProgressSerializer
-    pagination_class = None  # enable if needed
+    pagination_class = None
 
     def get_queryset(self):
         qs = (
@@ -1164,11 +1152,11 @@ class AdminTrainerLessonProgressListView(ListAPIView):
 
         trainer_id = self.request.query_params.get("trainer_id")
         department = self.request.query_params.get("department")
-        course_id = self.request.query_params.get("course_id")
-        status = self.request.query_params.get("status")
-        min_date = self.request.query_params.get("min_date")
-        max_date = self.request.query_params.get("max_date")
-        search = self.request.query_params.get("search")
+        course_id  = self.request.query_params.get("course_id")
+        status     = self.request.query_params.get("status")
+        min_date   = self.request.query_params.get("min_date")
+        max_date   = self.request.query_params.get("max_date")
+        search     = self.request.query_params.get("search")
 
         if trainer_id:
             qs = qs.filter(trainer_id=trainer_id)
@@ -1199,8 +1187,8 @@ class AdminTrainerLessonProgressListView(ListAPIView):
                 Q(trainer__user__username__icontains=search) |
                 Q(trainer__user__first_name__icontains=search) |
                 Q(trainer__user__last_name__icontains=search) |
-                Q(lesson__title__icontains=search) |
-                Q(lesson__course__title__icontains=search)
+                Q(lesson__lesson_name__icontains=search) |         # ← FIXED
+                Q(lesson__course__course_name__icontains=search)    # ← FIXED
             )
 
         return qs
