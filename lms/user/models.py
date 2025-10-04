@@ -720,3 +720,14 @@ class TrainerLessonProgress(models.Model):
         self.completed_at = timezone.now()
         self.status = "completed"
         self.percent = 100
+
+class TraineeFeedback(models.Model):
+    trainee = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="feedbacks")
+    communication = models.PositiveSmallIntegerField(default=0)
+    subject_knowledge = models.PositiveSmallIntegerField(default=0)
+    mentorship = models.PositiveSmallIntegerField(default=0)
+    custom_feedback = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Feedback by {self.trainee.username} on {self.created_at.date()}"

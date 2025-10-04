@@ -4,11 +4,11 @@ from rest_framework import status
 from .serializers import (
     SubjectSerializer, TraineeSerializer, LessonSerializer,QueryResponseSerializer, QuerySerializer,ContentEndSerializer,
     ContentStartSerializer,MacroplannerSerializer,MicroplannerSerializer,UserLoginActivitySerializer,NotificationReceiptSerializer,
-    ActiveQuizListSerializer,TraineeProgressSerializer
+    ActiveQuizListSerializer,TraineeProgressSerializer,TraineeFeedbackSerializer
 )
 from .models import (
     Subject, Lesson,TraineeProfile, UserLoginActivity,Query,Macroplanner, Microplanner,CustomUser,AssessmentReport,NotificationReceipt,
-    TraineeLessonCompletion
+    TraineeLessonCompletion,TraineeFeedback
 )
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
@@ -32,7 +32,7 @@ from rest_framework.permissions import IsAuthenticated
 from .models import Subject, TraineeProfile, EmployeeProfile
 from .serializers import SubjectSerializer
 from .views import BaseSOPListView,BaseSLListView
-from rest_framework import viewsets
+from rest_framework import viewsets,generics, permissions
 
 
 class SubjectListAPIView(APIView):
@@ -689,3 +689,20 @@ class TraineeProgressViewSet(viewsets.ViewSet):
         if "error" in data:
             return Response(data, status=404)
         return Response(TraineeProgressSerializer(data).data)
+    
+class TraineeFeedbackCreateView(generics.CreateAPIView):
+    serializer_class = TraineeFeedbackSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def perform_create(self, serializer):
+        serializer.save(trainee=self.request.user)
+
+class TraineeFeedbackMyListView(generics.ListAPIView):
+    """Trainee can see only their own feedbacks."""
+    serializer_class = TraineeFeedbackSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return TraineeFeedback.objects.filter(
+            trainee=self.request.user
+        ).order_by('-created_at')

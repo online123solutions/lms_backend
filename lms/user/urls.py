@@ -13,7 +13,7 @@ from .TrainerView import (
 from .TraineeView import (
     SubjectListAPIView, LessonListAPIView, LessonDetailAPIView,TraineeDashboardView,AvailableQuizListAPIView,TraineeQueryCreateAPIView,
     TraineeQueryListAPIView,TraineeQueryResponseAPIView,ContentStartView, ContentEndView,TraineeMacroplannerListAPIView,TraineeMicroplannerListAPIView,
-    TraineeLoginActivityAPIView,TraineeNotificationsView,TraineeSOPListView,TraineeLibraryListView,TraineeProgressViewSet
+    TraineeLoginActivityAPIView,TraineeNotificationsView,TraineeSOPListView,TraineeLibraryListView,TraineeProgressViewSet,TraineeFeedbackCreateView
 )
 
 from .EmployeeView import (
@@ -25,7 +25,8 @@ from .EmployeeView import (
 from .AdminView import (
     AdminDashboardView,AdminCourseView,AdminCourseLessonView,AdminLMSEngagementView,AdminRecentActivityView,AdminMacroplannerViewSet,
     AdminMicroplannerViewSet,AdminTrainingReportView,AdminAssessmentReportView,AdminNotifyView,AdminSOPListView,
-    AdminTrainerCourseProgressForTrainerView,AdminTrainerOverallSummaryView,AdminLibraryListView,AdminTrainerLessonProgressListView
+    AdminTrainerCourseProgressForTrainerView,AdminTrainerOverallSummaryView,AdminLibraryListView,AdminTrainerLessonProgressListView,
+    TraineeFeedbackAdminListView
 )
 from rest_framework.routers import DefaultRouter
 
@@ -90,6 +91,7 @@ urlpatterns = [
     path('trainee/lessons/<slug:lesson_slug>/complete/', MarkLessonCompletedAPIView.as_view(), name='mark-lesson-completed'),
     path('trainee/sops/', TraineeSOPListView.as_view(), name='trainee-sops'),
     path('trainee/library/', TraineeLibraryListView.as_view(), name='trainee-library'),
+    path("trainee/feedback/submit/", TraineeFeedbackCreateView.as_view(), name="submit-feedback"),
     path('trainee/<str:username>/', TraineeDashboardView.as_view(), name='trainee-dashboard'),
 
     # Employee Urls
@@ -125,8 +127,9 @@ urlpatterns = [
     path('custom_admin/notifications/send/', AdminNotifyView.as_view(), name='admin-send-notification'),
     path("custom_admin/sops/", AdminSOPListView.as_view(),    name="sops-admin"),
     path("custom_admin/library/", AdminLibraryListView.as_view(),    name="library-admin"),
-    path("admin/progress/lesson-rows/", AdminTrainerLessonProgressListView.as_view(), name="admin_lesson_progress_rows"),
-    path("admin/progress/trainer-courses/", AdminTrainerCourseProgressForTrainerView.as_view(), name="admin_trainer_course_summary"),
-    path("admin/progress/trainers-overall/", AdminTrainerOverallSummaryView.as_view(), name="admin_trainers_overall_summary"),
+    path("custon_admin/progress/lesson-rows/", AdminTrainerLessonProgressListView.as_view(), name="admin_lesson_progress_rows"),
+    path("custom_admin/progress/trainer-courses/", AdminTrainerCourseProgressForTrainerView.as_view(), name="admin_trainer_course_summary"),
+    path("custom_admin/progress/trainers-overall/", AdminTrainerOverallSummaryView.as_view(), name="admin_trainers_overall_summary"),
+    path("custom_admin/feedback/", TraineeFeedbackAdminListView.as_view(), name="feedback-admin-list"),
     path('custom_admin/<str:username>', AdminDashboardView.as_view(), name='admin-dashboard'),
 ]

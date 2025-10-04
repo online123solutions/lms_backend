@@ -3,7 +3,7 @@ from django.contrib.auth.password_validation import validate_password
 from .models import (
     CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile,AdminProfile,Courses, CourseLesson,Macroplanner,Microplanner,Assessment, AssessmentReport,EvaluationRemark
     ,TrainingReport,UserLoginActivity,Query,QueryResponse,Subject,Lesson,Notification,NotificationReceipt,SOP,StandardLibraryItem,
-    TrainerLessonProgress
+    TrainerLessonProgress,TraineeFeedback
 )
 from django.contrib.auth import authenticate
 from quiz.serializers import ResultSerializer
@@ -990,3 +990,20 @@ class InboxNotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
         fields = ("id", "subject", "message", "link", "created_at", "sent_by", "read_at")
+
+class TraineeFeedbackSerializer(serializers.ModelSerializer):
+    trainee_id = serializers.ReadOnlyField(source='trainee.id')
+    trainee_username = serializers.ReadOnlyField(source='trainee.username')
+
+    class Meta:
+        model = TraineeFeedback
+        fields = [
+            'id',
+            'trainee_id',
+            'trainee_username',
+            'communication',
+            'subject_knowledge',
+            'mentorship',
+            'custom_feedback',
+            'created_at'
+        ]

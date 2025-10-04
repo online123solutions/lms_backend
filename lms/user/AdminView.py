@@ -7,21 +7,20 @@ from django.db.models.functions import TruncDate
 from user.models import (
     AdminProfile,TraineeProfile, CustomUser,Courses,CourseLesson,Microplanner,Macroplanner,Assessment,AssessmentReport,EvaluationRemark,TrainingReport,UserLoginActivity,QueryResponse,
     Query,EmployeeProfile,Notification,NotificationReceipt,TraineeLessonCompletion,EmployeeLessonCompletion,AdminProfile,TrainerProfile,
-    TrainerLessonProgress
+    TrainerLessonProgress,TraineeFeedback
 )
 from user.serializers import (
     TrainerSerializer,CourseSerializer, CourseLessonSerializer, MacroplannerSerializer, MicroplannerSerializer,AssessmentSerializer,AssessmentReportSerializer,
     EvaluationRemarkSerializer,TrainingReportSerializer,UserLoginActivitySerializer,QueryResponseSerializer,QuerySerializer,
     TrainerNotificationRequestSerializer,SentNotificationSerializer,ActiveUserSerializer,AdminSerializer,AdminTrainerSummaryRowSerializer,
-    AdminTrainerLessonProgressSerializer,AdminCourseProgressRowSerializer
+    AdminTrainerLessonProgressSerializer,AdminCourseProgressRowSerializer,TraineeFeedbackSerializer
 )
 from rest_framework.generics import ListCreateAPIView,RetrieveUpdateAPIView, ListAPIView
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework import viewsets
+from rest_framework import viewsets,generics,status,permissions
 from rest_framework.exceptions import PermissionDenied
-from rest_framework import status
 from .tasks import send_notification_email, send_push_notification
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
@@ -36,6 +35,7 @@ from .utils import get_active_users
 from django.db.models import Case, When, Value, CharField, F, Q
 from .views import BaseSOPListView,BaseSLListView
 from datetime import datetime
+from django.utils.dateparse import parse_datetime
 
 class AdminDashboardView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1149,7 +1149,7 @@ class AdminTrainerLessonProgressListView(ListAPIView):
       - max_date (YYYY-MM-DD)  -> filters last_accessed_at <= max_date
       - search (matches trainer username, trainer name, lesson title, course title)
     """
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated]
     serializer_class = AdminTrainerLessonProgressSerializer
     pagination_class = None  # enable if needed
 
@@ -1209,7 +1209,7 @@ class AdminTrainerCourseProgressForTrainerView(ListAPIView):
     """
     Per-course summary for a given trainer_id.
     """
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated]
     serializer_class = AdminCourseProgressRowSerializer
     pagination_class = None
 
@@ -1273,7 +1273,7 @@ class AdminTrainerOverallSummaryView(ListAPIView):
     Query params:
       - department (str, optional)
     """
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated]
     serializer_class = AdminTrainerSummaryRowSerializer
     pagination_class = None
 
@@ -1357,3 +1357,67 @@ class AdminTrainerOverallSummaryView(ListAPIView):
         # Sort by completion desc, then name
         payload.sort(key=lambda x: (-x["completion_percent"], x["trainer_name"].lower()))
         return Response(payload)
+    
+class TraineeFeedbackAdminListView(generics.ListAPIView):
+    """
+    Admin dashboard list with filters:
+    ?username=<str>
+    &date_from=YYYY-MM-DD or ISO
+    &date_to=YYYY-MM-DD or ISO
+    &min_comm=1&max_comm=5
+    &min_subj=1&max_subj=5
+    &min_ment=1&max_ment=5
+    &search=<text in custom_feedback or username>
+    """
+    serializer_class = TraineeFeedbackSerializer
+    pagination_class = None  # add your PageNumberPagination if you want paging
+
+    def get_queryset(self):
+        qs = TraineeFeedback.objects.select_related('trainee').all().order_by('-created_at')
+        p = self.request.query_params
+
+        username = p.get('username')
+        if username:
+            qs = qs.filter(trainee__username__iexact=username)
+
+        date_from = p.get('date_from')
+        if date_from:
+            dt = parse_datetime(date_from) or parse_datetime(f"{date_from}T00:00:00")
+            if dt:
+                qs = qs.filter(created_at__gte=dt)
+
+        date_to = p.get('date_to')
+        if date_to:
+            dt = parse_datetime(date_to) or parse_datetime(f"{date_to}T23:59:59")
+            if dt:
+                qs = qs.filter(created_at__lte=dt)
+
+        def _int(qp, key, default=None):
+            try:
+                return int(qp.get(key))
+            except (TypeError, ValueError):
+                return default
+
+        min_comm = _int(p, 'min_comm')
+        max_comm = _int(p, 'max_comm')
+        if min_comm is not None: qs = qs.filter(communication__gte=min_comm)
+        if max_comm is not None: qs = qs.filter(communication__lte=max_comm)
+
+        min_subj = _int(p, 'min_subj')
+        max_subj = _int(p, 'max_subj')
+        if min_subj is not None: qs = qs.filter(subject_knowledge__gte=min_subj)
+        if max_subj is not None: qs = qs.filter(subject_knowledge__lte=max_subj)
+
+        min_ment = _int(p, 'min_ment')
+        max_ment = _int(p, 'max_ment')
+        if min_ment is not None: qs = qs.filter(mentorship__gte=min_ment)
+        if max_ment is not None: qs = qs.filter(mentorship__lte=max_ment)
+
+        search = p.get('search')
+        if search:
+            qs = qs.filter(
+                Q(custom_feedback__icontains=search) |
+                Q(trainee__username__icontains=search)
+            )
+
+        return qs
