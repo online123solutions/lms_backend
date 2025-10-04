@@ -1215,7 +1215,6 @@ class AdminTrainerCourseProgressView(ListAPIView):
       - ?only_approved=true    -> require is_approved on Courses & CourseLesson
       - ?frontend_only=true    -> require display_on_frontend on Courses & CourseLesson
     """
-    permission_classes = [IsAuthenticated]  # or [IsAuthenticated, IsAdminRole]
     serializer_class = AdminCourseProgressRowSerializer
     pagination_class = None
 
