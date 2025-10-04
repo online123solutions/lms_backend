@@ -952,13 +952,16 @@ class AdminTrainerLessonProgressSerializer(serializers.ModelSerializer):
         full = f"{getattr(u, 'first_name', '')} {getattr(u, 'last_name', '')}".strip()
         return full or u.username
 
-
 class AdminCourseProgressRowSerializer(serializers.Serializer):
-    """
-    Read serializer for per-course progress summary for a single trainer.
-    """
-    course_id = serializers.IntegerField()
-    course_title = serializers.CharField()
+    trainer_id = serializers.IntegerField()
+    trainer_username = serializers.CharField()
+    trainer_name = serializers.CharField()
+    trainer_department = serializers.CharField()
+
+    course_pk = serializers.IntegerField()
+    course_id = serializers.CharField()     # your string identifier
+    course_name = serializers.CharField()
+
     total_lessons = serializers.IntegerField()
     completed_lessons = serializers.IntegerField()
     completion_percent = serializers.IntegerField()

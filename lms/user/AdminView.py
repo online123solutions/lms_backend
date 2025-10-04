@@ -36,6 +36,7 @@ from django.db.models import Case, When, Value, CharField, F, Q
 from .views import BaseSOPListView,BaseSLListView
 from datetime import datetime
 from django.utils.dateparse import parse_datetime
+from django.core.exceptions import ObjectDoesNotExist
 
 class AdminDashboardView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1205,65 +1206,132 @@ class AdminTrainerLessonProgressListView(ListAPIView):
         return qs
 
 
-class AdminTrainerCourseProgressForTrainerView(ListAPIView):
+class AdminTrainerCourseProgressView(ListAPIView):
     """
-    Per-course summary for a given trainer_id.
+    Admin: per-course progress for ALL trainers (no trainer_id needed).
+    Optional filters:
+      - ?trainer_id=<int>      -> restrict to a single trainer
+      - ?department=<str>      -> restrict trainers/courses to a department value
+      - ?only_approved=true    -> require is_approved on Courses & CourseLesson
+      - ?frontend_only=true    -> require display_on_frontend on Courses & CourseLesson
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated]  # or [IsAuthenticated, IsAdminRole]
     serializer_class = AdminCourseProgressRowSerializer
     pagination_class = None
 
     def get_queryset(self):
-        return []  # DRF requires this; we override list()
+        return []  # DRF requirement; we construct payload manually
 
     def list(self, request, *args, **kwargs):
-        trainer_id = request.query_params.get("trainer_id")
-        if not trainer_id:
-            return Response({"detail": "trainer_id is required"}, status=400)
+        qp = request.query_params
+        trainer_id = qp.get("trainer_id")
+        dept_filter = qp.get("department")
+        only_approved = (qp.get("only_approved", "false").lower() in ("1", "true", "yes"))
+        frontend_only = (qp.get("frontend_only", "true").lower() in ("1", "true", "yes"))
 
-        trainer = TrainerProfile.objects.select_related("user").filter(id=trainer_id).first()
-        if not trainer:
-            return Response({"detail": "Trainer not found"}, status=404)
+        # Trainers to include
+        trainers_qs = TrainerProfile.objects.select_related("user")
+        if trainer_id:
+            trainers_qs = trainers_qs.filter(id=trainer_id)
+        if dept_filter:
+            trainers_qs = trainers_qs.filter(department=dept_filter)
 
-        courses = Courses.objects.filter(department=trainer.department, display_on_frontend=True).only("id", "title")
+        trainers = list(trainers_qs)
+        if not trainers:
+            if trainer_id:
+                return Response({"detail": "Trainer not found"}, status=404)
+            return Response([])
 
-        total_by_course = dict(
+        # Collect departments (string values)
+        departments = {getattr(t, "department", None) for t in trainers if getattr(t, "department", None)}
+        if not departments:
+            return Response([])
+
+        # Courses for these departments
+        course_filters = Q(department__in=list(departments))
+        if frontend_only:
+            course_filters &= Q(display_on_frontend=True)
+        if only_approved:
+            course_filters &= Q(is_approved=True)
+
+        courses_qs = Courses.objects.filter(course_filters).only(
+            "id", "course_id", "course_name", "department", "display_on_frontend", "is_approved"
+        )
+
+        # Group courses by department (string)
+        courses_by_dept = {}
+        for c in courses_qs:
+            courses_by_dept.setdefault(c.department, []).append(c)
+
+        # Lessons total per course
+        lesson_filters = Q(course__in=courses_qs)
+        if frontend_only:
+            lesson_filters &= Q(display_on_frontend=True)
+        if only_approved:
+            lesson_filters &= Q(is_approved=True)
+
+        total_by_course_pk = dict(
             CourseLesson.objects
-            .filter(course__in=courses, display_on_frontend=True)
+            .filter(lesson_filters)
             .values("course_id")
             .annotate(total=Count("id"))
             .values_list("course_id", "total")
         )
 
-        completed_by_course = dict(
+        # Completed lessons per (trainer, course_pk)
+        progress_filters = Q(
+            lesson__course__in=courses_qs,
+            trainer__in=trainers_qs,
+            status="completed",
+        )
+        if frontend_only:
+            progress_filters &= Q(lesson__display_on_frontend=True)
+        if only_approved:
+            progress_filters &= Q(lesson__is_approved=True)
+
+        completed_by_tc = dict(
             TrainerLessonProgress.objects
-            .filter(
-                trainer=trainer,
-                lesson__course__in=courses,
-                lesson__display_on_frontend=True,
-                status="completed",
-            )
-            .values("lesson__course_id")
+            .filter(progress_filters)
+            .values("trainer_id", "lesson__course_id")
             .annotate(done=Count("id"))
-            .values_list("lesson__course_id", "done")
+            .values_list("trainer_id", "lesson__course_id", "done")
         )
 
+        def name_for(tr):
+            u = getattr(tr, "user", None)
+            full = (u.get_full_name() if u and hasattr(u, "get_full_name") else "") or ""
+            if full.strip():
+                return full.strip()
+            return getattr(u, "username", f"trainer-{tr.id}")
+
         payload = []
-        for c in courses:
-            total = int(total_by_course.get(c.id, 0) or 0)
-            done = int(completed_by_course.get(c.id, 0) or 0)
-            percent = int(round((done / total) * 100)) if total else 0
-            payload.append({
-                "course_id": c.id,
-                "course_title": getattr(c, "title", f"Course {c.id}"),
-                "total_lessons": total,
-                "completed_lessons": done,
-                "completion_percent": percent,
-            })
+        for t in trainers:
+            dept = getattr(t, "department", None)
+            for c in courses_by_dept.get(dept, []):
+                total = int(total_by_course_pk.get(c.id, 0) or 0)
+                done = int(completed_by_tc.get((t.id, c.id), 0) or 0)
+                percent = int(round((done / total) * 100)) if total else 0
+                payload.append({
+                    "trainer_id": t.id,
+                    "trainer_username": getattr(getattr(t, "user", None), "username", ""),
+                    "trainer_name": name_for(t),
+                    "trainer_department": dept or "",
 
-        payload.sort(key=lambda x: (-x["completion_percent"], x["course_title"].lower()))
+                    "course_pk": c.id,                # numeric PK
+                    "course_id": c.course_id,         # your string identifier
+                    "course_name": c.course_name,
+
+                    "total_lessons": total,
+                    "completed_lessons": done,
+                    "completion_percent": percent,
+                })
+
+        payload.sort(key=lambda x: (
+            -(x["completion_percent"]),
+            x["trainer_name"].lower(),
+            x["course_name"].lower(),
+        ))
         return Response(payload)
-
 
 class AdminTrainerOverallSummaryView(ListAPIView):
     """

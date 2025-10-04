@@ -25,7 +25,7 @@ from .EmployeeView import (
 from .AdminView import (
     AdminDashboardView,AdminCourseView,AdminCourseLessonView,AdminLMSEngagementView,AdminRecentActivityView,AdminMacroplannerViewSet,
     AdminMicroplannerViewSet,AdminTrainingReportView,AdminAssessmentReportView,AdminNotifyView,AdminSOPListView,
-    AdminTrainerCourseProgressForTrainerView,AdminTrainerOverallSummaryView,AdminLibraryListView,AdminTrainerLessonProgressListView,
+    AdminTrainerCourseProgressView,AdminTrainerOverallSummaryView,AdminLibraryListView,AdminTrainerLessonProgressListView,
     TraineeFeedbackAdminListView
 )
 from rest_framework.routers import DefaultRouter
@@ -128,7 +128,7 @@ urlpatterns = [
     path("custom_admin/sops/", AdminSOPListView.as_view(),    name="sops-admin"),
     path("custom_admin/library/", AdminLibraryListView.as_view(),    name="library-admin"),
     path("custon_admin/progress/lesson-rows/", AdminTrainerLessonProgressListView.as_view(), name="admin_lesson_progress_rows"),
-    path("custom_admin/progress/trainer-courses/", AdminTrainerCourseProgressForTrainerView.as_view(), name="admin_trainer_course_summary"),
+    path("custom_admin/progress/trainer-courses/", AdminTrainerCourseProgressView.as_view(), name="admin_trainer_course_summary"),
     path("custom_admin/progress/trainers-overall/", AdminTrainerOverallSummaryView.as_view(), name="admin_trainers_overall_summary"),
     path("custom_admin/feedback/", TraineeFeedbackAdminListView.as_view(), name="feedback-admin-list"),
     path('custom_admin/<str:username>', AdminDashboardView.as_view(), name='admin-dashboard'),
