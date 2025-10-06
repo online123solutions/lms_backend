@@ -776,13 +776,6 @@ class TraineeTaskSubmissionViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(trainee=self.request.user)
 
-    # -------- Review Action (trainer/admin only) --------
-    @swagger_auto_schema(
-        method="post",
-        operation_description="Review a submission (trainer/admin). Provide marks (0-100), optional feedback, and optional review_file.",
-        request_body=TraineeTaskReviewSerializer,
-        responses={200: "OK", 400: "Bad Request", 403: "Forbidden", 404: "Not Found"},
-    )
     @action(detail=True, methods=["post"], url_path="review", parser_classes=[MultiPartParser, FormParser])
     def review(self, request, pk=None):
         submission = self.get_object()
