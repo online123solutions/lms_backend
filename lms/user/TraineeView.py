@@ -4,11 +4,11 @@ from rest_framework import status
 from .serializers import (
     SubjectSerializer, TraineeSerializer, LessonSerializer,QueryResponseSerializer, QuerySerializer,ContentEndSerializer,
     ContentStartSerializer,MacroplannerSerializer,MicroplannerSerializer,UserLoginActivitySerializer,NotificationReceiptSerializer,
-    ActiveQuizListSerializer,TraineeProgressSerializer,TraineeFeedbackSerializer
+    ActiveQuizListSerializer,TraineeProgressSerializer,TraineeFeedbackSerializer,TraineeTaskSubmissionSerializer,TraineeTaskReviewSerializer
 )
 from .models import (
     Subject, Lesson,TraineeProfile, UserLoginActivity,Query,Macroplanner, Microplanner,CustomUser,AssessmentReport,NotificationReceipt,
-    TraineeLessonCompletion,TraineeFeedback
+    TraineeLessonCompletion,TraineeFeedback,TraineeTaskSubmission,TrainerProfile
 )
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
@@ -17,11 +17,11 @@ from rest_framework.generics import ListAPIView
 from django.utils.timezone import now
 from quiz.models import Result, Quiz
 from quiz.serializers import QuizSerializer
-from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import NotFound,PermissionDenied
 from rest_framework.parsers import MultiPartParser, FormParser
 from collections import defaultdict
 from datetime import timedelta
-from django.db.models import Max,Avg,Count
+from django.db.models import Max,Avg,Count,Q
 from django.db.models import Exists, OuterRef
 
 # views.py
@@ -33,6 +33,7 @@ from .models import Subject, TraineeProfile, EmployeeProfile
 from .serializers import SubjectSerializer
 from .views import BaseSOPListView,BaseSLListView
 from rest_framework import viewsets,generics, permissions
+from rest_framework.decorators import action
 
 
 class SubjectListAPIView(APIView):
@@ -706,3 +707,114 @@ class TraineeFeedbackMyListView(generics.ListAPIView):
         return TraineeFeedback.objects.filter(
             trainee=self.request.user
         ).order_by('-created_at')
+    
+class TraineeTaskSubmissionViewSet(viewsets.ModelViewSet):
+    """
+    Trainee submissions + trainer review.
+    """
+    queryset = TraineeTaskSubmission.objects.select_related("trainee", "reviewed_by").all()
+    serializer_class = TraineeTaskSubmissionSerializer
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = self.queryset
+
+        status_q = (self.request.query_params.get("status") or "").strip().lower()
+        dept_q   = (self.request.query_params.get("department") or "").strip()
+        trainee_q = (self.request.query_params.get("trainee") or "").strip()
+        reviewed_q = (self.request.query_params.get("reviewed_by") or "").strip()
+
+        # Admin/staff: see all; allow filters
+        if user.is_staff or getattr(user, "is_superuser", False):
+            if status_q in ("submitted", "reviewed"):
+                qs = qs.filter(status=status_q)
+            if dept_q:
+                qs = qs.filter(department__iexact=dept_q)
+            if trainee_q:
+                qs = qs.filter(trainee__username=trainee_q)
+            if reviewed_q:
+                qs = qs.filter(reviewed_by__username=reviewed_q)
+            return qs.order_by("-submitted_at")
+
+        role = getattr(user, "role", None)
+        # Trainer: see submissions in own department (customize if needed)
+        if role == "trainer":
+            trainer_dept = None
+            try:
+                tp = TrainerProfile.objects.only("department").get(user=user)
+                trainer_dept = tp.department
+            except TrainerProfile.DoesNotExist:
+                pass
+
+            q = Q()
+            if trainer_dept:
+                q &= Q(department__iexact=trainer_dept)
+
+            if status_q in ("submitted", "reviewed"):
+                q &= Q(status=status_q)
+
+            if trainee_q:
+                q &= Q(trainee__username=trainee_q)
+
+            return qs.filter(q).order_by("-submitted_at")
+
+        # Trainee: see only own
+        if role == "trainee":
+            return qs.filter(trainee=user).order_by("-submitted_at")
+
+        # Other roles: nothing by default
+        return qs.none()
+
+    def create(self, request, *args, **kwargs):
+        role = getattr(request.user, "role", None)
+        if role != "trainee" and not (request.user.is_staff or request.user.is_superuser):
+            raise PermissionDenied("Only trainees can submit tasks.")
+        return super().create(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        serializer.save(trainee=self.request.user)
+
+    # -------- Review Action (trainer/admin only) --------
+    @swagger_auto_schema(
+        method="post",
+        operation_description="Review a submission (trainer/admin). Provide marks (0-100), optional feedback, and optional review_file.",
+        request_body=TraineeTaskReviewSerializer,
+        responses={200: "OK", 400: "Bad Request", 403: "Forbidden", 404: "Not Found"},
+    )
+    @action(detail=True, methods=["post"], url_path="review", parser_classes=[MultiPartParser, FormParser])
+    def review(self, request, pk=None):
+        submission = self.get_object()
+        user = request.user
+
+        # Only trainers/admin can review
+        if not (user.is_staff or getattr(user, "role", None) == "trainer" or getattr(user, "is_superuser", False)):
+            raise PermissionDenied("Only trainers or admins can review submissions.")
+
+        # Optional: enforce trainer-department scope
+        if getattr(user, "role", None) == "trainer":
+            try:
+                tp = TrainerProfile.objects.only("department").get(user=user)
+                if submission.department and tp.department and submission.department.lower() != tp.department.lower():
+                    raise PermissionDenied("You can only review submissions from your department.")
+            except TrainerProfile.DoesNotExist:
+                # If no profile, you may choose to block or allow; here we allow
+                pass
+
+        ser = TraineeTaskReviewSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+
+        # Apply review
+        for field, value in ser.validated_data.items():
+            setattr(submission, field, value)
+
+        submission.status = TraineeTaskSubmission.STATUS_REVIEWED
+        submission.reviewed_by = user
+        submission.reviewed_at = now()
+        submission.save(update_fields=[
+            "marks", "feedback", "review_file", "status", "reviewed_by", "reviewed_at", "updated_at"
+        ])
+
+        # Return updated full object
+        return Response(TraineeTaskSubmissionSerializer(submission).data, status=status.HTTP_200_OK)    

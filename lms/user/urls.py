@@ -13,7 +13,8 @@ from .TrainerView import (
 from .TraineeView import (
     SubjectListAPIView, LessonListAPIView, LessonDetailAPIView,TraineeDashboardView,AvailableQuizListAPIView,TraineeQueryCreateAPIView,
     TraineeQueryListAPIView,TraineeQueryResponseAPIView,ContentStartView, ContentEndView,TraineeMacroplannerListAPIView,TraineeMicroplannerListAPIView,
-    TraineeLoginActivityAPIView,TraineeNotificationsView,TraineeSOPListView,TraineeLibraryListView,TraineeProgressViewSet,TraineeFeedbackCreateView
+    TraineeLoginActivityAPIView,TraineeNotificationsView,TraineeSOPListView,TraineeLibraryListView,TraineeProgressViewSet,TraineeFeedbackCreateView,
+    TraineeTaskSubmissionViewSet
 )
 
 from .EmployeeView import (
@@ -41,6 +42,7 @@ router.register(r'trainer/training-report', TrainingReportView, basename='traini
 router.register(r'custom_admin/training-report', AdminTrainingReportView, basename='admin-training-report')
 router.register(r'trainee/trainee-progress', TraineeProgressViewSet, basename='trainee-progress')
 router.register(r'employee/employee-progress', EmployeeProgressViewSet, basename='employee-progress')
+router.register(r"trainee/trainee-tasks", TraineeTaskSubmissionViewSet, basename="trainee-task")
 
 urlpatterns = [
     path('', include(router.urls)),

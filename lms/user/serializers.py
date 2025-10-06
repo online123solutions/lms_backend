@@ -3,7 +3,7 @@ from django.contrib.auth.password_validation import validate_password
 from .models import (
     CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile,AdminProfile,Courses, CourseLesson,Macroplanner,Microplanner,Assessment, AssessmentReport,EvaluationRemark
     ,TrainingReport,UserLoginActivity,Query,QueryResponse,Subject,Lesson,Notification,NotificationReceipt,SOP,StandardLibraryItem,
-    TrainerLessonProgress,TraineeFeedback
+    TrainerLessonProgress,TraineeFeedback,TraineeTaskSubmission
 )
 from django.contrib.auth import authenticate
 from quiz.serializers import ResultSerializer
@@ -1145,3 +1145,61 @@ class AdminNotificationRequestSerializer(serializers.Serializer):
         attrs["audience_roles"] = normalized_roles     # keep both for convenience
 
         return attrs
+    
+
+class TraineeTaskSubmissionSerializer(serializers.ModelSerializer):
+    trainee_username = serializers.SerializerMethodField(read_only=True)
+    reviewed_by_username = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = TraineeTaskSubmission
+        fields = [
+            "id",
+            "trainee_username",
+            "department",
+            "text",
+            "file",
+            "submitted_at",
+            "status",
+            "marks",
+            "feedback",
+            "reviewed_by_username",
+            "reviewed_at",
+            "review_file",
+        ]
+        read_only_fields = [
+            "submitted_at", "status", "marks", "feedback",
+            "reviewed_by_username", "reviewed_at", "review_file",
+        ]
+
+    def get_trainee_username(self, obj):
+        return getattr(obj.trainee, "username", None)
+
+    def get_reviewed_by_username(self, obj):
+        return getattr(obj.reviewed_by, "username", None)
+
+    def validate(self, attrs):
+        text = (attrs.get("text") or "").strip()
+        file_ = attrs.get("file")
+        if not text and not file_:
+            raise serializers.ValidationError("Provide either text or file (or both).")
+        return attrs
+    
+class TraineeTaskReviewSerializer(serializers.ModelSerializer):
+    """Used only by trainers/admin to review/score a submission."""
+    class Meta:
+        model = TraineeTaskSubmission
+        fields = ["marks", "feedback", "review_file"]
+        extra_kwargs = {
+            "marks": {"required": True},
+            "feedback": {"required": False},
+            "review_file": {"required": False},
+        }
+
+    def validate_marks(self, v):
+        # Typical 0..100 range; tweak if you need a different range
+        if v is None:
+            return v
+        if v < 0 or v > 100:
+            raise serializers.ValidationError("Marks must be between 0 and 100.")
+        return v

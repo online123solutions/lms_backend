@@ -731,3 +731,41 @@ class TraineeFeedback(models.Model):
 
     def __str__(self):
         return f"Feedback by {self.trainee.username} on {self.created_at.date()}"
+    
+class TraineeTaskSubmission(models.Model):
+    STATUS_SUBMITTED = "submitted"
+    STATUS_REVIEWED  = "reviewed"
+    STATUS_CHOICES = [
+        (STATUS_SUBMITTED, "Submitted"),
+        (STATUS_REVIEWED,  "Reviewed"),
+    ]
+
+    trainee = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name="trainee_task_submissions"
+    )
+    department   = models.CharField(max_length=120, blank=True)   # optional
+    text         = models.TextField(blank=True)                   # optional
+    file         = models.FileField(upload_to="trainee_tasks/%Y/%m/%d/", blank=True, null=True)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    updated_at   = models.DateTimeField(auto_now=True)
+
+    # --- Review fields ---
+    status      = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_SUBMITTED)
+    marks       = models.PositiveSmallIntegerField(null=True, blank=True)  # 0..100 (typical)
+    feedback    = models.TextField(blank=True)
+    reviewed_by = models.ForeignKey(
+        TrainerProfile,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="trainee_task_reviews"
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    review_file = models.FileField(upload_to="trainee_tasks/reviews/%Y/%m/%d/", blank=True, null=True)
+
+    class Meta:
+        ordering = ("-submitted_at",)
+
+    def __str__(self):
+        return f"Submission #{self.pk} by {self.trainee} ({self.department or '-'})"
