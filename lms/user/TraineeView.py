@@ -703,7 +703,7 @@ class TraineeTaskSubmissionViewSet(viewsets.ModelViewSet):
     queryset = (TraineeTaskSubmission.objects
                 .select_related("trainee", "reviewed_by", "reviewed_by__user")
                 .all())
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
     serializer_class = TraineeTaskSubmissionSerializer
     # swagger_schema = None  # <-- uncomment to hide from Swagger entirely if you still see AnonymousUser errors
