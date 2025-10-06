@@ -700,6 +700,7 @@ class TraineeFeedbackCreateView(generics.CreateAPIView):
         serializer.save(trainee=self.request.user)
 
 class TraineeTaskSubmissionViewSet(viewsets.ModelViewSet):
+    swagger_schema = None
     queryset = TraineeTaskSubmission.objects.select_related("trainee", "reviewed_by").all()
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
