@@ -35,6 +35,7 @@ from .views import BaseSOPListView,BaseSLListView
 from rest_framework import viewsets,generics, permissions
 from rest_framework.decorators import action
 import logging
+from rest_framework.pagination import PageNumberPagination
 
 
 class SubjectListAPIView(APIView):
@@ -699,35 +700,35 @@ class TraineeFeedbackCreateView(generics.CreateAPIView):
     def perform_create(self, serializer):
         serializer.save(trainee=self.request.user)
 
-class TraineeTaskSubmissionViewSet(viewsets.GenericViewSet):
+class _TasksPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = "page_size"
+    max_page_size = 200
+
+class TraineeTaskSubmissionViewSet(viewsets.ViewSet):
     """
-    GET    /trainee/trainee-tasks/            -> list (role-aware, paginated)
-    POST   /trainee/trainee-tasks/            -> create (trainee only, multipart)
-    GET    /trainee/trainee-tasks/<pk>/       -> retrieve (role-aware)
-    POST   /trainee/trainee-tasks/<pk>/review/-> review (trainer/admin; multipart)
+    GET    /trainee/trainee-tasks/               -> paginated list (role-aware)
+    POST   /trainee/trainee-tasks/               -> create (trainee/admin only)
+    GET    /trainee/trainee-tasks/<pk>/          -> retrieve (role-aware)
+    POST   /trainee/trainee-tasks/<pk>/review/   -> review (trainer/admin)
     """
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
-    serializer_class = TraineeTaskSubmissionSerializer
-    filter_backends = []  # hard-disable any global backends that might touch request.user during docs
+    pagination_class = _TasksPagination
+    # If Swagger keeps poking this with AnonymousUser, uncomment:
+    # swagger_schema = None
 
-    # keep select_related shallow (TrainerProfile may not always have 'user' named exactly that in prod)
+    # ---- helpers ----
     def _base_qs(self):
+        # keep joins shallow; serializer can access reviewed_by.user safely
         return (TraineeTaskSubmission.objects
                 .select_related("trainee", "reviewed_by")
                 .all())
 
-    def get_serializer_class(self):
-        if getattr(self, "action", None) == "review":
-            return TraineeTaskReviewSerializer
-        return TraineeTaskSubmissionSerializer
-
-    # ---------- helpers ----------
     def _trainer_profile(self, user):
         return getattr(user, "trainerprofile", None) or getattr(user, "trainer_profile", None)
 
-    def _apply_filters(self, qs):
-        """Admin/trainer visible filters."""
+    def _apply_admin_trainer_filters(self, qs):
         req = self.request
         status_q   = (req.query_params.get("status") or "").strip().lower()
         dept_q     = (req.query_params.get("department") or "").strip()
@@ -741,13 +742,12 @@ class TraineeTaskSubmissionViewSet(viewsets.GenericViewSet):
         if trainee_q:
             qs = qs.filter(trainee__username=trainee_q)
         if reviewed_q:
-            # reviewed_by is TrainerProfile -> traverse to its user username if available
-            qs = qs.filter(reviewed_by__user__username=reviewed_q)
+            qs = qs.filter(reviewed_by__user__username=reviewed_q)  # TrainerProfile -> User
         return qs
 
-    # ---------- list ----------
+    # ---- list ----
     def list(self, request):
-        # make docs probing harmless if any tool still touches this method
+        # protect schema gen, if any tool still touches it
         if getattr(self, "swagger_fake_view", False):
             return Response({"count": 0, "next": None, "previous": None, "results": []})
 
@@ -755,29 +755,30 @@ class TraineeTaskSubmissionViewSet(viewsets.GenericViewSet):
         role = getattr(user, "role", None)
 
         if user.is_staff or getattr(user, "is_superuser", False):
-            qs = self._apply_filters(self._base_qs()).order_by("-submitted_at")
+            qs = self._apply_admin_trainer_filters(self._base_qs()).order_by("-submitted_at")
+
         elif role == "trainer":
             tp = self._trainer_profile(user)
             q = Q()
             if tp and getattr(tp, "department", None):
                 q &= Q(department__iexact=str(tp.department))
-            # trainers can use filters except they cannot escape dept scope
-            qs = self._apply_filters(self._base_qs().filter(q)).order_by("-submitted_at")
+            qs = self._apply_admin_trainer_filters(self._base_qs().filter(q)).order_by("-submitted_at")
+
         elif role == "trainee":
-            # trainees see only their own; allow status filter only
-            qs = self._base_qs().filter(trainee_id=user.id)
+            qs = self._base_qs().filter(trainee_id=user.id).order_by("-submitted_at")
             status_q = (request.query_params.get("status") or "").strip().lower()
             if status_q in ("submitted", "reviewed"):
                 qs = qs.filter(status=status_q)
-            qs = qs.order_by("-submitted_at")
+
         else:
             return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
 
-        page = self.paginate_queryset(qs)
-        ser = self.get_serializer(page if page is not None else qs, many=True)
-        return self.get_paginated_response(ser.data) if page is not None else Response(ser.data)
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(qs, request)
+        ser = TraineeTaskSubmissionSerializer(page, many=True)
+        return paginator.get_paginated_response(ser.data)
 
-    # ---------- create (trainee only) ----------
+    # ---- create (trainee/admin) ----
     def create(self, request):
         if getattr(self, "swagger_fake_view", False):
             return Response(status=status.HTTP_201_CREATED)
@@ -792,7 +793,7 @@ class TraineeTaskSubmissionViewSet(viewsets.GenericViewSet):
         obj = ser.save(trainee=user)
         return Response(TraineeTaskSubmissionSerializer(obj).data, status=status.HTTP_201_CREATED)
 
-    # ---------- retrieve ----------
+    # ---- retrieve ----
     def retrieve(self, request, pk=None):
         if getattr(self, "swagger_fake_view", False):
             return Response(status=status.HTTP_200_OK)
@@ -801,7 +802,7 @@ class TraineeTaskSubmissionViewSet(viewsets.GenericViewSet):
         role = getattr(user, "role", None)
 
         try:
-            submission = self._base_qs().get(pk=pk)
+            obj = self._base_qs().get(pk=pk)
         except TraineeTaskSubmission.DoesNotExist:
             return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -810,17 +811,17 @@ class TraineeTaskSubmissionViewSet(viewsets.GenericViewSet):
         elif role == "trainer":
             tp = self._trainer_profile(user)
             dept = getattr(tp, "department", None) if tp else None
-            if not (dept and submission.department and str(dept).lower() == str(submission.department).lower()):
+            if not (dept and obj.department and str(dept).lower() == str(obj.department).lower()):
                 return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
         elif role == "trainee":
-            if submission.trainee_id != user.id:
+            if obj.trainee_id != user.id:
                 return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
         else:
             return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
 
-        return Response(TraineeTaskSubmissionSerializer(submission).data)
+        return Response(TraineeTaskSubmissionSerializer(obj).data)
 
-    # ---------- review (trainer/admin) ----------
+    # ---- review (trainer/admin) ----
     @action(detail=True, methods=["post"], url_path="review", parser_classes=[MultiPartParser, FormParser])
     def review(self, request, pk=None):
         if getattr(self, "swagger_fake_view", False):
@@ -834,31 +835,28 @@ class TraineeTaskSubmissionViewSet(viewsets.GenericViewSet):
                             status=status.HTTP_403_FORBIDDEN)
 
         try:
-            submission = self._base_qs().get(pk=pk)
+            obj = self._base_qs().get(pk=pk)
         except TraineeTaskSubmission.DoesNotExist:
             return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        trainer_profile = self._trainer_profile(user)
-
-        # trainer dept guard
-        if is_trainer and trainer_profile:
-            dept = getattr(trainer_profile, "department", None)
-            if submission.department and dept and str(submission.department).lower() != str(dept).lower():
+        tp = self._trainer_profile(user)
+        if is_trainer and tp:
+            dept = getattr(tp, "department", None)
+            if obj.department and dept and str(obj.department).lower() != str(dept).lower():
                 return Response({"error": "You can only review submissions from your department."},
                                 status=status.HTTP_403_FORBIDDEN)
 
         ser = TraineeTaskReviewSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
 
-        # apply review fields
         for f, v in ser.validated_data.items():
-            setattr(submission, f, v)
+            setattr(obj, f, v)
 
-        submission.status = TraineeTaskSubmission.STATUS_REVIEWED
-        submission.reviewed_by = trainer_profile if (is_trainer and trainer_profile) else None
-        submission.reviewed_at = now()
-        submission.save(update_fields=[
-            "marks", "feedback", "review_file", "status", "reviewed_by", "reviewed_at", "updated_at"
+        obj.status = TraineeTaskSubmission.STATUS_REVIEWED
+        obj.reviewed_by = tp if (is_trainer and tp) else None
+        obj.reviewed_at = now()
+        obj.save(update_fields=[
+            "marks", "feedback", "review_file",
+            "status", "reviewed_by", "reviewed_at", "updated_at"
         ])
-
-        return Response(TraineeTaskSubmissionSerializer(submission).data, status=status.HTTP_200_OK)
+        return Response(TraineeTaskSubmissionSerializer(obj).data, status=status.HTTP_200_OK)
