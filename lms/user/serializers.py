@@ -1162,7 +1162,7 @@ class TraineeTaskSubmissionSerializer(serializers.ModelSerializer):
     trainee_username = serializers.SerializerMethodField(read_only=True)
     reviewed_by_username = serializers.SerializerMethodField(read_only=True)
 
-    # 🚑 NEW: safe file outputs
+    # safer file fields (avoid .url 500s)
     file = SafeFileField(required=False, allow_null=True)
     review_file = SafeFileField(required=False, allow_null=True)
 
@@ -1191,7 +1191,11 @@ class TraineeTaskSubmissionSerializer(serializers.ModelSerializer):
         return getattr(obj.trainee, "username", None)
 
     def get_reviewed_by_username(self, obj):
-        return getattr(obj.reviewed_by, "username", None)
+        # reviewed_by is TrainerProfile; fetch its user.username if present
+        try:
+            return getattr(obj.reviewed_by.user, "username", None)
+        except Exception:
+            return None
 
     def validate(self, attrs):
         text = (attrs.get("text") or "").strip()
@@ -1199,9 +1203,9 @@ class TraineeTaskSubmissionSerializer(serializers.ModelSerializer):
         if not text and not file_:
             raise serializers.ValidationError("Provide either text or file (or both).")
         return attrs
-    
+
+
 class TraineeTaskReviewSerializer(serializers.ModelSerializer):
-    """Used only by trainers/admin to review/score a submission."""
     class Meta:
         model = TraineeTaskSubmission
         fields = ["marks", "feedback", "review_file"]
@@ -1212,7 +1216,6 @@ class TraineeTaskReviewSerializer(serializers.ModelSerializer):
         }
 
     def validate_marks(self, v):
-        # Typical 0..100 range; tweak if you need a different range
         if v is None:
             return v
         if v < 0 or v > 100:

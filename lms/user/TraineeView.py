@@ -700,10 +700,13 @@ class TraineeFeedbackCreateView(generics.CreateAPIView):
         serializer.save(trainee=self.request.user)
 
 class TraineeTaskSubmissionViewSet(viewsets.ModelViewSet):
-    queryset = TraineeTaskSubmission.objects.select_related("trainee", "reviewed_by").all()
+    queryset = (TraineeTaskSubmission.objects
+                .select_related("trainee", "reviewed_by", "reviewed_by__user")
+                .all())
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
     serializer_class = TraineeTaskSubmissionSerializer
+    # swagger_schema = None  # <-- uncomment to hide from Swagger entirely if you still see AnonymousUser errors
 
     def get_serializer_class(self):
         if getattr(self, "swagger_fake_view", False):
@@ -712,6 +715,7 @@ class TraineeTaskSubmissionViewSet(viewsets.ModelViewSet):
             return TraineeTaskReviewSerializer
         return TraineeTaskSubmissionSerializer
 
+    # block global filter backends during swagger/anon to avoid AnonymousUser FK errors
     def get_filter_backends(self):
         if getattr(self, "swagger_fake_view", False):
             return []
@@ -719,17 +723,15 @@ class TraineeTaskSubmissionViewSet(viewsets.ModelViewSet):
             return []
         return super().get_filter_backends()
 
-
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return self.queryset.none()
 
         user = self.request.user
-        qs = self.queryset
-
         if not getattr(user, "is_authenticated", False):
-            return qs.none()
+            return self.queryset.none()
 
+        qs = self.queryset
         status_q   = (self.request.query_params.get("status") or "").strip().lower()
         dept_q     = (self.request.query_params.get("department") or "").strip()
         trainee_q  = (self.request.query_params.get("trainee") or "").strip()
@@ -743,13 +745,15 @@ class TraineeTaskSubmissionViewSet(viewsets.ModelViewSet):
             if trainee_q:
                 qs = qs.filter(trainee__username=trainee_q)
             if reviewed_q:
-                qs = qs.filter(reviewed_by__username=reviewed_q)
+                # ✅ TrainerProfile -> User.username
+                qs = qs.filter(reviewed_by__user__username=reviewed_q)
             return qs.order_by("-submitted_at")
 
         role = getattr(user, "role", None)
 
         if role == "trainer":
-            tp = (getattr(user, "trainerprofile", None) or getattr(user, "trainer_profile", None))
+            tp = (getattr(user, "trainerprofile", None)
+                  or getattr(user, "trainer_profile", None))
             trainer_dept = getattr(tp, "department", None)
 
             q = Q()
@@ -763,8 +767,53 @@ class TraineeTaskSubmissionViewSet(viewsets.ModelViewSet):
             return qs.filter(q).order_by("-submitted_at")
 
         if role == "trainee":
-            # Use *_id to avoid AnonymousUser surprises
             return qs.filter(trainee_id=user.id).order_by("-submitted_at")
 
         return qs.none()
 
+    def create(self, request, *args, **kwargs):
+        role = getattr(request.user, "role", None)
+        if role != "trainee" and not (request.user.is_staff or request.user.is_superuser):
+            raise PermissionDenied("Only trainees can submit tasks.")
+        return super().create(request, *args, **kwargs)
+
+    @action(detail=True, methods=["post"], url_path="review", parser_classes=[MultiPartParser, FormParser])
+    def review(self, request, pk=None):
+        submission = self.get_object()
+        user = request.user
+
+        if not (user.is_staff or getattr(user, "role", None) == "trainer" or getattr(user, "is_superuser", False)):
+            raise PermissionDenied("Only trainers or admins can review submissions.")
+
+        # ✅ Get TrainerProfile for trainers; admins might not have one
+        trainer_profile = (getattr(user, "trainerprofile", None)
+                           or getattr(user, "trainer_profile", None))
+
+        # Department enforcement only for trainers with a profile
+        if getattr(user, "role", None) == "trainer" and trainer_profile:
+            dept = getattr(trainer_profile, "department", None)
+            if submission.department and dept and str(submission.department).lower() != str(dept).lower():
+                raise PermissionDenied("You can only review submissions from your department.")
+
+        ser = self.get_serializer(data=request.data)  # TraineeTaskReviewSerializer
+        ser.is_valid(raise_exception=True)
+
+        for field, value in ser.validated_data.items():
+            setattr(submission, field, value)
+
+        submission.status = TraineeTaskSubmission.STATUS_REVIEWED
+
+        # ✅ Set reviewed_by to TrainerProfile if available
+        if trainer_profile:
+            submission.reviewed_by = trainer_profile
+        else:
+            # Admin without TrainerProfile -> leave as NULL (allowed by model)
+            submission.reviewed_by = None
+
+        submission.reviewed_at = now()
+        submission.save(update_fields=[
+            "marks", "feedback", "review_file",
+            "status", "reviewed_by", "reviewed_at", "updated_at",
+        ])
+
+        return Response(TraineeTaskSubmissionSerializer(submission).data, status=status.HTTP_200_OK)
