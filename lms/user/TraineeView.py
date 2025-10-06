@@ -707,20 +707,7 @@ class TraineeTaskSubmissionViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser]
     serializer_class = TraineeTaskSubmissionSerializer
     # swagger_schema = None  # <-- uncomment to hide from Swagger entirely if you still see AnonymousUser errors
-
-    @swagger_auto_schema(auto_schema=None)  # ⬅️ drf_yasg will not introspect this method
-    def list(self, request, *args, **kwargs):
-        if getattr(self, "swagger_fake_view", False):
-            # Return an empty, valid shape so docs still build
-            return Response({"count": 0, "next": None, "previous": None, "results": []})
-        return super().list(request, *args, **kwargs)
-
-    @swagger_auto_schema(auto_schema=None)
-    def retrieve(self, request, *args, **kwargs):
-        if getattr(self, "swagger_fake_view", False):
-            return Response(status=200)
-        return super().retrieve(request, *args, **kwargs)
-
+    
     def get_serializer_class(self):
         if getattr(self, "swagger_fake_view", False):
             return TraineeTaskSubmissionSerializer
@@ -783,7 +770,7 @@ class TraineeTaskSubmissionViewSet(viewsets.ModelViewSet):
             return qs.filter(trainee_id=user.id).order_by("-submitted_at")
 
         return qs.none()
-    @swagger_auto_schema(auto_schema=None)
+
     def create(self, request, *args, **kwargs):
         role = getattr(request.user, "role", None)
         if role != "trainee" and not (request.user.is_staff or request.user.is_superuser):
