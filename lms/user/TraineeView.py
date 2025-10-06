@@ -700,7 +700,6 @@ class TraineeFeedbackCreateView(generics.CreateAPIView):
         serializer.save(trainee=self.request.user)
 
 class TraineeTaskSubmissionViewSet(viewsets.ModelViewSet):
-    swagger_schema = None
     queryset = TraineeTaskSubmission.objects.select_related("trainee", "reviewed_by").all()
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
@@ -713,13 +712,13 @@ class TraineeTaskSubmissionViewSet(viewsets.ModelViewSet):
             return TraineeTaskReviewSerializer
         return TraineeTaskSubmissionSerializer
 
-    # 🚑 NEW: stop global filter backends from running during swagger (or anon)
     def get_filter_backends(self):
         if getattr(self, "swagger_fake_view", False):
             return []
         if not getattr(self.request, "user", None) or not self.request.user.is_authenticated:
             return []
         return super().get_filter_backends()
+
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):

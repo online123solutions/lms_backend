@@ -14,6 +14,17 @@ from django.conf import settings
 from django.db import IntegrityError
 from .utils import get_trainer_profile
 
+
+class SafeFileField(serializers.FileField):
+    def to_representation(self, value):
+        if not value:
+            return None
+        try:
+            return value.url  # normal case
+        except Exception:
+            # storage misconfig or permission issue: fall back gracefully
+            return value.name  # relative path in storage
+        
 class CustomUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
@@ -1150,6 +1161,10 @@ class AdminNotificationRequestSerializer(serializers.Serializer):
 class TraineeTaskSubmissionSerializer(serializers.ModelSerializer):
     trainee_username = serializers.SerializerMethodField(read_only=True)
     reviewed_by_username = serializers.SerializerMethodField(read_only=True)
+
+    # 🚑 NEW: safe file outputs
+    file = SafeFileField(required=False, allow_null=True)
+    review_file = SafeFileField(required=False, allow_null=True)
 
     class Meta:
         model = TraineeTaskSubmission
