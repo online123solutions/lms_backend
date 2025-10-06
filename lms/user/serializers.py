@@ -1034,3 +1034,114 @@ class TraineeFeedbackSerializer(serializers.ModelSerializer):
             'custom_feedback',
             'created_at'
         ]
+
+ADMIN_ROLE_CHOICES = ["trainer", "employee", "trainee"]
+
+class AdminNotificationRequestSerializer(serializers.Serializer):
+    # Core fields
+    subject = serializers.CharField(required=False, allow_blank=True, default="Notification")
+    message = serializers.CharField()
+    link = serializers.URLField(required=False, allow_null=True, allow_blank=True)
+    notification_type = serializers.ChoiceField(
+        choices=[c[0] for c in Notification._meta.get_field("notification_type").choices],
+        default="info"
+    )
+
+    # Modes
+    mode = serializers.ChoiceField(choices=["individual", "group"])
+
+    # Individual mode
+    usernames = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        default=list
+    )
+
+    # Group mode — preferred modern way
+    audience_roles = serializers.ListField(
+        child=serializers.ChoiceField(choices=ADMIN_ROLE_CHOICES),
+        required=False,
+        allow_empty=False
+    )
+
+    # Group mode — legacy back-compat (optional)
+    # Accepts: employee | trainee | trainer | both | all
+    audience = serializers.ChoiceField(
+        choices=["employee", "trainee", "trainer", "both", "all"],
+        required=False
+    )
+
+    # Optional scoping by departments (applies to employee and trainer roles)
+    # e.g., ["Robotics", "AI Lab"]
+    departments = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        allow_empty=True
+    )
+
+    def validate(self, attrs):
+        mode = attrs.get("mode")
+        subject = (attrs.get("subject") or "Notification").strip()
+        message = (attrs.get("message") or "").strip()
+        link = (attrs.get("link") or None) or None
+
+        if not message:
+            raise serializers.ValidationError({"message": "Message is required."})
+
+        normalized_roles = None
+
+        if mode == "individual":
+            usernames = list({
+                (u or "").strip()
+                for u in (attrs.get("usernames") or [])
+                if (u or "").strip()
+            })
+            if not usernames:
+                raise serializers.ValidationError({"usernames": "Provide at least one username for individual mode."})
+            attrs["usernames"] = usernames
+            normalized_roles = []  # not used in individual mode, but keep a consistent shape
+
+        elif mode == "group":
+            audience_roles = attrs.get("audience_roles")
+            legacy = (attrs.get("audience") or "").strip().lower()
+
+            if audience_roles:
+                normalized_roles = sorted(set(map(str.lower, audience_roles)))
+            elif legacy:
+                if legacy == "all":
+                    normalized_roles = ["trainer", "employee", "trainee"]
+                elif legacy == "both":
+                    normalized_roles = ["employee", "trainee"]
+                elif legacy in ADMIN_ROLE_CHOICES:
+                    normalized_roles = [legacy]
+                else:
+                    raise serializers.ValidationError({"audience": "Invalid legacy audience."})
+            else:
+                raise serializers.ValidationError({"audience_roles": "Provide audience_roles or legacy audience for group mode."})
+
+            # Validate roles
+            invalid = [r for r in normalized_roles if r not in ADMIN_ROLE_CHOICES]
+            if invalid:
+                raise serializers.ValidationError({"audience_roles": f"Invalid roles: {invalid}"})
+
+            if not normalized_roles:
+                raise serializers.ValidationError({"audience_roles": "At least one role must be selected."})
+        else:
+            raise serializers.ValidationError({"mode": "Invalid mode. Use 'individual' or 'group'."})
+
+        # Normalize departments (optional)
+        depts = [
+            (d or "").strip()
+            for d in (attrs.get("departments") or [])
+            if (d or "").strip()
+        ]
+        attrs["departments"] = list(dict.fromkeys(depts)) or None
+
+        # Final normalized fields
+        attrs["subject"] = subject
+        attrs["message"] = message
+        attrs["link"] = link or None
+        attrs["audience"] = normalized_roles           # always a list
+        attrs["audience_roles"] = normalized_roles     # keep both for convenience
+
+        return attrs

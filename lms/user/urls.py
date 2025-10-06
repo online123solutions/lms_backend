@@ -26,7 +26,7 @@ from .AdminView import (
     AdminDashboardView,AdminCourseView,AdminCourseLessonView,AdminLMSEngagementView,AdminRecentActivityView,AdminMacroplannerViewSet,
     AdminMicroplannerViewSet,AdminTrainingReportView,AdminAssessmentReportView,AdminNotifyView,AdminSOPListView,
     AdminTrainerCourseProgressView,AdminTrainerOverallSummaryView,AdminLibraryListView,AdminTrainerLessonProgressListView,
-    TraineeFeedbackAdminListView
+    TraineeFeedbackAdminListView,AdminNotifyView
 )
 from rest_framework.routers import DefaultRouter
 

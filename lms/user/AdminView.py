@@ -13,7 +13,8 @@ from user.serializers import (
     TrainerSerializer,CourseSerializer, CourseLessonSerializer, MacroplannerSerializer, MicroplannerSerializer,AssessmentSerializer,AssessmentReportSerializer,
     EvaluationRemarkSerializer,TrainingReportSerializer,UserLoginActivitySerializer,QueryResponseSerializer,QuerySerializer,
     TrainerNotificationRequestSerializer,SentNotificationSerializer,ActiveUserSerializer,AdminSerializer,AdminTrainerSummaryRowSerializer,
-    AdminTrainerLessonProgressSerializer,AdminCourseProgressRowSerializer,TraineeFeedbackSerializer
+    AdminTrainerLessonProgressSerializer,AdminCourseProgressRowSerializer,TraineeFeedbackSerializer,AdminNotificationRequestSerializer,
+    InboxNotificationSerializer
 )
 from rest_framework.generics import ListCreateAPIView,RetrieveUpdateAPIView, ListAPIView
 from drf_yasg.utils import swagger_auto_schema
@@ -32,7 +33,7 @@ from rest_framework.pagination import PageNumberPagination
 from django.core.exceptions import FieldDoesNotExist
 from quiz.models import Quiz
 from .utils import get_active_users
-from django.db.models import Case, When, Value, CharField, F, Q
+from django.db.models import Case, When, Value, CharField, F, Q,OuterRef,Subquery,Exists,DateTimeField
 from .views import BaseSOPListView,BaseSLListView
 from datetime import datetime
 from django.utils.dateparse import parse_datetime
@@ -1474,3 +1475,229 @@ class TraineeFeedbackAdminListView(generics.ListAPIView):
             )
 
         return qs
+
+BULK_CHUNK = 1000
+ROLE_TRAINER  = "trainer"
+ROLE_EMPLOYEE = "employee"
+ROLE_TRAINEE  = "trainee"
+ROLE_ADMIN    = "admin"
+
+class AdminNotifyView(APIView):
+    """
+    Admin/staff notifications endpoint:
+      - GET: list inbox/sent/both for the authenticated admin/staff
+      - POST: send to trainer/employee/trainee (any combination), with optional dept scoping
+    """
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    # --------------------- PERM CHECK ---------------------
+    def _ensure_admin(self, request):
+        if not (getattr(request.user, "is_staff", False) or getattr(request.user, "role", None) == ROLE_ADMIN):
+            return False
+        return True
+
+    # ----------------------- GET -------------------------
+    def get(self, request):
+        """
+        List notifications.
+
+        Query params:
+        - box: sent | inbox | both  (default: sent)
+        - search: str (subject/message/link contains)
+        - date_from: YYYY-MM-DD (created_at >=)
+        - date_to: YYYY-MM-DD (created_at <=)
+        - from_admin: true|false (only show those sent_by staff/admin)
+        """
+        if not self._ensure_admin(request):
+            return Response({"error": "Only admin/staff can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+
+        box = (request.query_params.get("box") or "sent").strip().lower()
+        if box not in ("sent", "inbox", "both"):
+            box = "sent"
+
+        search = (request.query_params.get("search") or "").strip()
+        date_from = (request.query_params.get("date_from") or "").strip()
+        date_to = (request.query_params.get("date_to") or "").strip()
+        from_admin = (request.query_params.get("from_admin") or "").strip().lower() in ("1", "true", "yes")
+
+        paginator = SmallPageNumberPagination()
+
+        def apply_common_filters(qs):
+            if search:
+                qs = qs.filter(
+                    Q(subject__icontains=search)
+                    | Q(message__icontains=search)
+                    | Q(link__icontains=search)
+                )
+            if date_from:
+                qs = qs.filter(created_at__date__gte=date_from)
+            if date_to:
+                qs = qs.filter(created_at__date__lte=date_to)
+            if from_admin:
+                qs = qs.filter(Q(sent_by__is_staff=True) | Q(sent_by__role=ROLE_ADMIN))
+            return qs.order_by("-created_at", "-id")
+
+        payload = {}
+
+        if box in ("sent", "both"):
+            sent_qs = (
+                Notification.objects
+                .filter(sent_by=request.user)
+                .annotate(recipients_count=Count("notificationreceipt", distinct=True))
+            )
+            sent_qs = apply_common_filters(sent_qs)
+            sent_page = paginator.paginate_queryset(sent_qs, request) if box == "sent" else list(sent_qs[:50])
+            payload["sent"] = SentNotificationSerializer(sent_page, many=True).data
+
+        if box in ("inbox", "both"):
+            # Inbox for admin will list any notifications with a receipt addressed to them
+            receipt_sq = NotificationReceipt.objects.filter(
+                notification_id=OuterRef("pk"),
+                user_id=request.user.id,
+            ).values("read_at")[:1]
+
+            exists_receipt = NotificationReceipt.objects.filter(
+                notification_id=OuterRef("pk"),
+                user_id=request.user.id,
+            )
+
+            inbox_qs = (
+                Notification.objects
+                .annotate(
+                    _has_my_receipt=Exists(exists_receipt),
+                    my_read_at=Subquery(receipt_sq, output_field=DateTimeField()),
+                )
+                .filter(_has_my_receipt=True)
+            )
+            inbox_qs = apply_common_filters(inbox_qs)
+            inbox_page = paginator.paginate_queryset(inbox_qs, request) if box == "inbox" else list(inbox_qs[:50])
+            payload["inbox"] = InboxNotificationSerializer(inbox_page, many=True).data
+
+        if box == "both":
+            return Response(payload, status=200)
+        return paginator.get_paginated_response(payload.get(box, []))
+
+    # ----------------------- POST ------------------------
+    @swagger_auto_schema(
+        operation_description="""
+        Admin/staff: Send notifications to any combination of roles with optional department scoping.
+
+        Modes:
+        - individual: provide `usernames` (list)
+        - group: provide `audience_roles` (preferred) or legacy `audience` (employee|trainee|trainer|both|all)
+                 Optional `departments` applies to employees and trainers.
+        """,
+        request_body=AdminNotificationRequestSerializer,
+        responses={200: openapi.Response("OK"), 400: "Bad Request", 403: "Forbidden", 404: "Not Found"}
+    )
+    def post(self, request):
+        if not self._ensure_admin(request):
+            return Response({"error": "Only admin/staff can send notifications."}, status=status.HTTP_403_FORBIDDEN)
+
+        ser = AdminNotificationRequestSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+
+        subject    = data["subject"].strip()
+        message    = data["message"].strip()
+        link       = (data.get("link") or "").strip() or None
+        notif_type = data["notification_type"]
+        mode       = data["mode"]
+        depts      = data.get("departments") or None   # list[str] or None
+
+        base_q = Q(is_active=True)
+
+        # ---------- Build recipients ----------
+        if mode == "individual":
+            usernames = data.get("usernames") or []
+            qs = CustomUser.objects.filter(base_q, username__in=usernames).only("id", "email", "role")
+
+        elif mode == "group":
+            roles = data.get("audience") or []  # always a list per serializer
+            role_q = Q()
+
+            if ROLE_EMPLOYEE in roles:
+                emp_q = Q(role=ROLE_EMPLOYEE)
+                if depts:
+                    emp_q &= Q(employee_profile__department__in=depts)
+                role_q |= emp_q
+
+            if ROLE_TRAINER in roles:
+                trn_q = Q(role=ROLE_TRAINER)
+                # Scope trainers by dept only if you actually store it; otherwise drop this block
+                if depts:
+                    trn_q &= Q(trainer_profile__department__in=depts)
+                role_q |= trn_q
+
+            if ROLE_TRAINEE in roles:
+                role_q |= Q(role=ROLE_TRAINEE)
+
+            if not role_q.children:
+                return Response({"error": "No valid roles requested."}, status=400)
+
+            qs = CustomUser.objects.filter(base_q & role_q).only("id", "email", "role")
+
+        else:
+            return Response({"error": "Invalid mode. Use 'individual' or 'group'."}, status=400)
+
+        qs = qs.exclude(id=request.user.id).distinct()
+        recipients = list(qs.values_list("id", "email", "role"))
+        if not recipients:
+            return Response({"error": "No matching recipients found."}, status=404)
+
+        ids    = [r[0] for r in recipients]
+        emails = [r[1] for r in recipients if r[1]]
+        roles  = [r[2] for r in recipients]
+
+        emp_count = sum(1 for r in roles if r == ROLE_EMPLOYEE)
+        trn_count = sum(1 for r in roles if r == ROLE_TRAINEE)
+        tnr_count = sum(1 for r in roles if r == ROLE_TRAINER)
+
+        # ---------- Create notification + receipts ----------
+        from itertools import islice
+        def chunks(seq, n):
+            it = iter(seq)
+            while True:
+                batch = list(islice(it, n))
+                if not batch:
+                    break
+                yield batch
+
+        with transaction.atomic():
+            notif = Notification.objects.create(
+                subject=subject,
+                message=message,
+                link=link,
+                notification_type=notif_type,
+                sent_by=request.user,
+            )
+
+            for batch in chunks(ids, BULK_CHUNK):
+                NotificationReceipt.objects.bulk_create(
+                    [NotificationReceipt(notification=notif, user_id=u) for u in batch],
+                    ignore_conflicts=True,
+                )
+
+        # ---------- Optional async fanout ----------
+        # try:
+        #     send_push_notification.delay(ids, subject, message)
+        # except Exception:
+        #     pass
+        # for e in emails:
+        #     try:
+        #         send_notification_email.delay(e, subject, message)
+        #     except Exception:
+        #         continue
+
+        return Response(
+            {
+                "message": f"Notification sent to {len(ids)} user(s).",
+                "notification_id": notif.id,
+                "counts": {"employees": emp_count, "trainees": trn_count, "trainers": tnr_count},
+                "audience": sorted(list(set(roles))),
+                "mode": mode,
+                "departments": depts,
+            },
+            status=200,
+        )
