@@ -714,7 +714,7 @@ class TraineeTaskSubmissionViewSet(viewsets.ViewSet):
     """
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
-    pagination_class = _TasksPagination
+    pagination_class = None  # Disabled pagination
     # If Swagger keeps poking this with AnonymousUser, uncomment:
     # swagger_schema = None
 
@@ -749,7 +749,7 @@ class TraineeTaskSubmissionViewSet(viewsets.ViewSet):
     def list(self, request):
         # protect schema gen, if any tool still touches it
         if getattr(self, "swagger_fake_view", False):
-            return Response({"count": 0, "next": None, "previous": None, "results": []})
+            return Response([])
 
         user = request.user
         role = getattr(user, "role", None)
@@ -773,14 +773,8 @@ class TraineeTaskSubmissionViewSet(viewsets.ViewSet):
         else:
             return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
 
-        paginator = self.pagination_class()
-        page = paginator.paginate_queryset(qs, request)
-        if page is not None:
-            ser = TraineeTaskSubmissionSerializer(page, many=True)
-            return paginator.get_paginated_response(ser.data)
-        else:
-            ser = TraineeTaskSubmissionSerializer(qs, many=True)
-            return Response(ser.data)
+        ser = TraineeTaskSubmissionSerializer(qs, many=True)
+        return Response(ser.data)
 
     # ---- create (trainee/admin) ----
     def create(self, request):
