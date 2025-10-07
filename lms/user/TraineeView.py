@@ -774,9 +774,11 @@ class TraineeTaskSubmissionViewSet(viewsets_ViewSet):
         return Response(ser.data)
 
     # ---- create (trainee/admin) ----
+    @swagger_auto_schema(request_body=TraineeTaskSubmissionSerializer)
     def create(self, request):
-        if getattr(self, "swagger_fake_view", False):
-            return Response(status=status.HTTP_201_CREATED)
+        # Remove or comment out the fake_view check to allow real testing in Swagger after auth
+        # if getattr(self, "swagger_fake_view", False):
+        #     return Response(status=status.HTTP_201_CREATED)
 
         user = request.user
         role = getattr(user, "role", None)
