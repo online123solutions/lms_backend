@@ -703,10 +703,6 @@ class TraineeFeedbackCreateView(generics.CreateAPIView):
     def perform_create(self, serializer):
         serializer.save(trainee=self.request.user)
 
-class _TasksPagination(PageNumberPagination):
-    page_size = 20
-    page_size_query_param = "page_size"
-    max_page_size = 200
 
 class TraineeTaskSubmissionViewSet(viewsets_ViewSet):
     """
