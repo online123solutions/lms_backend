@@ -775,8 +775,12 @@ class TraineeTaskSubmissionViewSet(viewsets.ViewSet):
 
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(qs, request)
-        ser = TraineeTaskSubmissionSerializer(page, many=True)
-        return paginator.get_paginated_response(ser.data)
+        if page is not None:
+            ser = TraineeTaskSubmissionSerializer(page, many=True)
+            return paginator.get_paginated_response(ser.data)
+        else:
+            ser = TraineeTaskSubmissionSerializer(qs, many=True)
+            return Response(ser.data)
 
     # ---- create (trainee/admin) ----
     def create(self, request):
