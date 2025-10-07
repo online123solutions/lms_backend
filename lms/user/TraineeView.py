@@ -36,6 +36,7 @@ from rest_framework import viewsets,generics, permissions
 from rest_framework.decorators import action
 import logging
 from rest_framework.pagination import PageNumberPagination
+from django.utils import timezone
 
 
 class SubjectListAPIView(APIView):
@@ -707,7 +708,7 @@ class _TasksPagination(PageNumberPagination):
 
 class TraineeTaskSubmissionViewSet(viewsets.ViewSet):
     """
-    GET    /trainee/trainee-tasks/               -> paginated list (role-aware)
+    GET    /trainee/trainee-tasks/               -> list (role-aware)
     POST   /trainee/trainee-tasks/               -> create (trainee/admin only)
     GET    /trainee/trainee-tasks/<pk>/          -> retrieve (role-aware)
     POST   /trainee/trainee-tasks/<pk>/review/   -> review (trainer/admin)
@@ -715,8 +716,7 @@ class TraineeTaskSubmissionViewSet(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
     pagination_class = None  # Disabled pagination
-    # If Swagger keeps poking this with AnonymousUser, uncomment:
-    # swagger_schema = None
+    swagger_schema = None  # Disable schema generation to avoid AnonymousUser issues in Swagger
 
     # ---- helpers ----
     def _base_qs(self):
@@ -852,7 +852,7 @@ class TraineeTaskSubmissionViewSet(viewsets.ViewSet):
 
         obj.status = TraineeTaskSubmission.STATUS_REVIEWED
         obj.reviewed_by = tp if (is_trainer and tp) else None
-        obj.reviewed_at = now()
+        obj.reviewed_at = timezone.now()
         obj.save(update_fields=[
             "marks", "feedback", "review_file",
             "status", "reviewed_by", "reviewed_at", "updated_at"
