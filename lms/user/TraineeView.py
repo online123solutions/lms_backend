@@ -8,7 +8,7 @@ from .serializers import (
 )
 from .models import (
     Subject, Lesson,TraineeProfile, UserLoginActivity,Query,Macroplanner, Microplanner,CustomUser,AssessmentReport,NotificationReceipt,
-    TraineeLessonCompletion,TraineeFeedback,TraineeTaskSubmission,TrainerProfile
+    TraineeLessonCompletion,TraineeTaskSubmission
 )
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
@@ -23,6 +23,8 @@ from collections import defaultdict
 from datetime import timedelta
 from django.db.models import Max,Avg,Count,Q
 from django.db.models import Exists, OuterRef
+from rest_framework.viewsets import ViewSet as viewsets_ViewSet
+from rest_framework.permissions import IsAuthenticated as permissions_IsAuthenticated
 
 # views.py
 from rest_framework.views import APIView
@@ -706,14 +708,14 @@ class _TasksPagination(PageNumberPagination):
     page_size_query_param = "page_size"
     max_page_size = 200
 
-class TraineeTaskSubmissionViewSet(viewsets.ViewSet):
+class TraineeTaskSubmissionViewSet(viewsets_ViewSet):
     """
     GET    /trainee/trainee-tasks/               -> list (role-aware)
     POST   /trainee/trainee-tasks/               -> create (trainee/admin only)
     GET    /trainee/trainee-tasks/<pk>/          -> retrieve (role-aware)
     POST   /trainee/trainee-tasks/<pk>/review/   -> review (trainer/admin)
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions_IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
     pagination_class = None  # Disabled pagination
     swagger_schema = None  # Disable schema generation to avoid AnonymousUser issues in Swagger
