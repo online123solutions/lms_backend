@@ -1,6 +1,8 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.viewsets import ViewSet as viewsets_ViewSet
+from rest_framework.permissions import IsAuthenticated as permissions_IsAuthenticated
 from .serializers import (
     SubjectSerializer, TraineeSerializer, LessonSerializer,QueryResponseSerializer, QuerySerializer,ContentEndSerializer,
     ContentStartSerializer,MacroplannerSerializer,MicroplannerSerializer,UserLoginActivitySerializer,NotificationReceiptSerializer,
@@ -23,8 +25,6 @@ from collections import defaultdict
 from datetime import timedelta
 from django.db.models import Max,Avg,Count,Q
 from django.db.models import Exists, OuterRef
-from rest_framework.viewsets import ViewSet as viewsets_ViewSet
-from rest_framework.permissions import IsAuthenticated as permissions_IsAuthenticated
 
 # views.py
 from rest_framework.views import APIView
