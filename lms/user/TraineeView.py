@@ -718,7 +718,6 @@ class TraineeTaskSubmissionViewSet(viewsets_ViewSet):
     permission_classes = [permissions_IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
     pagination_class = None  # Disabled pagination
-    swagger_schema = None  # Disable schema generation to avoid AnonymousUser issues in Swagger
 
     # ---- helpers ----
     def _base_qs(self):
