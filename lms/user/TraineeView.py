@@ -6,11 +6,12 @@ from rest_framework.permissions import IsAuthenticated as permissions_IsAuthenti
 from .serializers import (
     SubjectSerializer, TraineeSerializer, LessonSerializer,QueryResponseSerializer, QuerySerializer,ContentEndSerializer,
     ContentStartSerializer,MacroplannerSerializer,MicroplannerSerializer,UserLoginActivitySerializer,NotificationReceiptSerializer,
-    ActiveQuizListSerializer,TraineeProgressSerializer,TraineeFeedbackSerializer,TraineeTaskSubmissionSerializer,TraineeTaskReviewSerializer
+    ActiveQuizListSerializer,TraineeProgressSerializer,TraineeFeedbackSerializer,TraineeTaskSubmissionSerializer,TraineeTaskReviewSerializer,
+    BannerSerializer
 )
 from .models import (
     Subject, Lesson,TraineeProfile, UserLoginActivity,Query,Macroplanner, Microplanner,CustomUser,AssessmentReport,NotificationReceipt,
-    TraineeLessonCompletion,TraineeTaskSubmission
+    TraineeLessonCompletion,TraineeTaskSubmission,Banner
 )
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
@@ -857,3 +858,18 @@ class TraineeTaskSubmissionViewSet(viewsets_ViewSet):
             "status", "reviewed_by", "reviewed_at", "updated_at"
         ])
         return Response(TraineeTaskSubmissionSerializer(obj).data, status=status.HTTP_200_OK)
+    
+class BannerViewSet(viewsets.ModelViewSet):
+    """
+    Endpoints:
+    - GET    /api/banners/           -> list
+    - POST   /api/banners/           -> create (multipart)
+    - GET    /api/banners/{id}/      -> retrieve
+    - PUT    /api/banners/{id}/      -> update
+    - PATCH  /api/banners/{id}/      -> partial update
+    - DELETE /api/banners/{id}/      -> delete
+    """
+    queryset = Banner.objects.all()
+    serializer_class = BannerSerializer
+    permission_classes = [permissions.AllowAny]  # adjust as needed
+    parser_classes = [MultiPartParser, FormParser]  # to accept image uploads

@@ -2,7 +2,7 @@ from django.contrib import admin
 from .models import (
     CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile,Courses, CourseLesson,Macroplanner,Microplanner,Subject,Lesson,Query,QueryResponse,
     UserLoginActivity,AssessmentReport,Notification,NotificationReceipt,EmployeeLessonCompletion,TraineeLessonCompletion,AdminProfile,SOP,
-    StandardLibraryItem,TrainerLessonProgress,TraineeFeedback,TraineeTaskSubmission
+    StandardLibraryItem,TrainerLessonProgress,TraineeFeedback,TraineeTaskSubmission,Banner
     )
 from django_admin_listfilter_dropdown.filters import DropdownFilter
 
@@ -167,3 +167,9 @@ class TraineeTaskSubmissionAdmin(admin.ModelAdmin):
     list_filter = ("status", "department", "submitted_at")
     search_fields = ("trainee__username", "department", "text", "feedback")
     date_hierarchy = "submitted_at"
+
+@admin.register(Banner)
+class BannerAdmin(admin.ModelAdmin):
+    list_display = ("id", "title", "is_active", "created_at")
+    list_filter = ("is_active", "created_at")
+    search_fields = ("title", "text")

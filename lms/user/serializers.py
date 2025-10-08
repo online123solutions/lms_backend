@@ -3,7 +3,7 @@ from django.contrib.auth.password_validation import validate_password
 from .models import (
     CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile,AdminProfile,Courses, CourseLesson,Macroplanner,Microplanner,Assessment, AssessmentReport,EvaluationRemark
     ,TrainingReport,UserLoginActivity,Query,QueryResponse,Subject,Lesson,Notification,NotificationReceipt,SOP,StandardLibraryItem,
-    TrainerLessonProgress,TraineeFeedback,TraineeTaskSubmission
+    TrainerLessonProgress,TraineeFeedback,TraineeTaskSubmission,Banner
 )
 from django.contrib.auth import authenticate
 from quiz.serializers import ResultSerializer
@@ -1221,3 +1221,19 @@ class TraineeTaskReviewSerializer(serializers.ModelSerializer):
         if v < 0 or v > 100:
             raise serializers.ValidationError("Marks must be between 0 and 100.")
         return v
+    
+
+class BannerSerializer(serializers.ModelSerializer):
+    image_url = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = Banner
+        fields = ["id", "title", "text", "image", "image_url", "is_active", "created_at", "updated_at"]
+        read_only_fields = ["id", "image_url", "created_at", "updated_at"]
+
+    def get_image_url(self, obj):
+        request = self.context.get("request")
+        if obj.image and hasattr(obj.image, "url"):
+            url = obj.image.url
+            return request.build_absolute_uri(url) if request else url
+        return None

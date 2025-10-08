@@ -14,7 +14,7 @@ from .TraineeView import (
     SubjectListAPIView, LessonListAPIView, LessonDetailAPIView,TraineeDashboardView,AvailableQuizListAPIView,TraineeQueryCreateAPIView,
     TraineeQueryListAPIView,TraineeQueryResponseAPIView,ContentStartView, ContentEndView,TraineeMacroplannerListAPIView,TraineeMicroplannerListAPIView,
     TraineeLoginActivityAPIView,TraineeNotificationsView,TraineeSOPListView,TraineeLibraryListView,TraineeProgressViewSet,TraineeFeedbackCreateView,
-    TraineeTaskSubmissionViewSet
+    TraineeTaskSubmissionViewSet,BannerViewSet
 )
 
 from .EmployeeView import (
@@ -43,6 +43,7 @@ router.register(r'custom_admin/training-report', AdminTrainingReportView, basena
 router.register(r'trainee/trainee-progress', TraineeProgressViewSet, basename='trainee-progress')
 router.register(r'employee/employee-progress', EmployeeProgressViewSet, basename='employee-progress')
 router.register(r"trainee/trainee-tasks", TraineeTaskSubmissionViewSet, basename="trainee-task")
+router.register(r"trainee/banners", BannerViewSet, basename="banner")
 
 urlpatterns = [
     path('', include(router.urls)),

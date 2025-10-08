@@ -769,3 +769,18 @@ class TraineeTaskSubmission(models.Model):
 
     def __str__(self):
         return f"Submission #{self.pk} by {self.trainee} ({self.department or '-'})"
+    
+class Banner(models.Model):
+    title = models.CharField(max_length=200)
+    image = models.ImageField(upload_to="banners/")  # requires Pillow
+    text = models.TextField(blank=True)              # overlay/description text
+    is_active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.title
