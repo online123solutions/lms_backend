@@ -27,7 +27,7 @@ from rest_framework.exceptions import NotFound
 from .utils import get_active_users
 from django.db import transaction
 from datetime import date
-from django.db.models import Q, Count
+from django.db.models import Q, Count,F
 from rest_framework.pagination import PageNumberPagination
 from django.core.exceptions import FieldDoesNotExist
 from quiz.models import Quiz
@@ -425,19 +425,29 @@ class RecentActivityView(APIView):
         # Cache key
         cache_key = f"recent_activity_{trainer_obj.pk}"
 
-        students = EmployeeProfile.objects.filter(department=department_instance).only("user__username")
+        trainee_usernames = TraineeProfile.objects.all().values_list("user__username", flat=True)
+        employee_usernames = EmployeeProfile.objects.all().values_list("user__username", flat=True)
+        usernames = list(set(list(trainee_usernames) + list(employee_usernames)))
 
+            # Get unique departments
+        employee_depts = EmployeeProfile.objects.values_list("department", flat=True)
+        trainee_depts = TraineeProfile.objects.values_list("department", flat=True)
+        departments = list(set(list(employee_depts) + list(trainee_depts)))
+
+        # Recent logins (last 5)
         recent_logins = UserLoginActivity.objects.filter(
-            login_username__in=students.values_list("user__username", flat=True)
+            login_username__in=usernames,
+            status='S'
         ).annotate(
-            login_date=TruncDate("login_datetime")
-        ).values("login_username", "login_date").order_by("-login_datetime")[:5]
+            truncated_login_date=TruncDate("login_datetime")
+        ).values(
+            "login_username",
+            login_date=F("truncated_login_date")
+        ).order_by("-login_datetime")[:5]
 
-        response_data=({
-            "recent_activity": {
-                "recent_logins": list(recent_logins),
-            }
-        })
+        response_data = {   
+            "recent_logins": list(recent_logins),
+        }
 
         return Response(response_data)
 
