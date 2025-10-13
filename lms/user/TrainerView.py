@@ -27,7 +27,7 @@ from rest_framework.exceptions import NotFound
 from .utils import get_active_users
 from django.db import transaction
 from datetime import date
-from django.db.models import Q, Count,F
+from django.db.models import Q, Count,Case, When, Value, CharField, F
 from rest_framework.pagination import PageNumberPagination
 from django.core.exceptions import FieldDoesNotExist
 from quiz.models import Quiz
@@ -434,7 +434,7 @@ class RecentActivityView(APIView):
         trainee_depts = TraineeProfile.objects.values_list("department", flat=True)
         departments = list(set(list(employee_depts) + list(trainee_depts)))
 
-        # Recent logins (last 5)
+            # Recent logins (last 5)
         recent_logins = UserLoginActivity.objects.filter(
             login_username__in=usernames,
             status='S'
@@ -445,9 +445,30 @@ class RecentActivityView(APIView):
             login_date=F("truncated_login_date")
         ).order_by("-login_datetime")[:5]
 
-        response_data = {   
-            "recent_logins": list(recent_logins),
-        }
+            # Recent assessment submissions (last 5)
+        recent_assessments = AssessmentReport.objects.filter(
+            Q(audience='trainee') | Q(audience='employee'),
+            quiz__department__in=departments
+        ).annotate(
+            truncated_submission_date=TruncDate("last_updated"),
+            username=Case(
+                When(audience='trainee', then=F('quiz__created_by__username')),
+                When(audience='employee', then=F('quiz__created_by__username')),
+                default=Value('Unknown'),
+                output_field=CharField(),
+            )
+        ).values(
+            "username",
+            quiz_name=F("quiz__quiz_name"),
+            submission_date=F("truncated_submission_date")
+        ).order_by("-truncated_submission_date")[:5]
+
+        response_data=({
+            "recent_activity": {
+                "recent_logins": list(recent_logins),
+                "recent_assessments":list(recent_assessments)
+            }
+        })
 
         return Response(response_data)
 
