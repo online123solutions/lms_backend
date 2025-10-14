@@ -6,13 +6,14 @@ from django.shortcuts import get_object_or_404
 from django.db.models.functions import TruncDate
 from user.models import (
     TrainerProfile,TraineeProfile, CustomUser,Courses,CourseLesson,Microplanner,Macroplanner,Assessment,AssessmentReport,EvaluationRemark,TrainingReport,UserLoginActivity,QueryResponse,
-    Query,EmployeeProfile,Notification,NotificationReceipt,TraineeLessonCompletion,EmployeeLessonCompletion,TrainerLessonProgress
+    Query,EmployeeProfile,Notification,NotificationReceipt,TraineeLessonCompletion,EmployeeLessonCompletion,TrainerLessonProgress,TraineeTaskSubmission,
+    TaskAssignment
 )
 from user.serializers import (
     TrainerSerializer,CourseSerializer, CourseLessonSerializer, MacroplannerSerializer, MicroplannerSerializer,AssessmentSerializer,AssessmentReportSerializer,
     EvaluationRemarkSerializer,TrainingReportSerializer,UserLoginActivitySerializer,QueryResponseSerializer,QuerySerializer,
     EmployeeSerializer,TrainerNotificationRequestSerializer,SentNotificationSerializer,ActiveUserSerializer,TrainerLessonProgressWriteSerializer,
-    InboxNotificationSerializer,TrainerLessonProgressReadSerializer
+    InboxNotificationSerializer,TrainerLessonProgressReadSerializer,TaskAssignmentCreateSerializer,TaskAssignmentSerializer,LinkSubmissionSerializer
 )
 from rest_framework.generics import ListCreateAPIView,RetrieveUpdateAPIView, ListAPIView
 from drf_yasg.utils import swagger_auto_schema
@@ -20,7 +21,7 @@ from drf_yasg import openapi
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework import viewsets
 from rest_framework.exceptions import PermissionDenied
-from rest_framework import status
+from rest_framework import status,permissions
 from .tasks import send_notification_email, send_push_notification
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
@@ -34,6 +35,7 @@ from quiz.models import Quiz
 from .utils import get_active_users,get_trainer_profile
 from .views import BaseSLListView,BaseSOPListView
 from django.db.models import Q, Count, OuterRef, Subquery, DateTimeField, Exists
+from django.utils import timezone
 
 class TrainerDashboardView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1020,3 +1022,202 @@ class TrainerLessonProgressDetailView(RetrieveUpdateAPIView):
             .select_related("lesson", "lesson__course")
             .filter(trainer=trainer, lesson__course__department=trainer.department)
         )
+    
+class IsAuth(permissions.IsAuthenticated):
+    pass
+
+class TaskAssignmentViewSet(viewsets.ViewSet):
+    """
+    GET    /training/tasks/                     -> list (role-aware)
+    POST   /training/tasks/                     -> create (trainer/admin)
+    GET    /training/tasks/<pk>/                -> retrieve (role-aware)
+    PATCH  /training/tasks/<pk>/                -> update (trainer/admin)
+    POST   /training/tasks/<pk>/start/          -> assignee marks in-progress
+    POST   /training/tasks/<pk>/complete/       -> trainer/admin closes as completed
+    POST   /training/tasks/<pk>/cancel/         -> trainer/admin cancels
+    POST   /training/tasks/<pk>/attach-submit/  -> assignee links a submission
+    """
+    permission_classes = [IsAuth]
+    parser_classes = [MultiPartParser, FormParser]
+    pagination_class = None
+
+    def _base_qs(self):
+        return TaskAssignment.objects.select_related("assigned_to", "created_by", "submission")
+
+    def _trainer_profile(self, user):
+        return getattr(user, "trainerprofile", None) or getattr(user, "trainer_profile", None)
+
+    def _apply_filters(self, qs):
+        p = self.request.query_params
+        status_q   = (p.get("status") or "").strip().lower()
+        dept_q     = (p.get("department") or "").strip()
+        assignee_q = (p.get("assignee") or "").strip()
+        overdue_q  = (p.get("overdue") or "").strip()  # "1" to filter overdue
+        due_after  = (p.get("due_after") or "").strip()
+        due_before = (p.get("due_before") or "").strip()
+
+        if status_q in dict(TaskAssignment.STATUS_CHOICES):
+            qs = qs.filter(status=status_q)
+        if dept_q:
+            qs = qs.filter(department__iexact=dept_q)
+        if assignee_q:
+            qs = qs.filter(assigned_to__username=assignee_q)
+        if overdue_q == "1":
+            qs = qs.filter(due_at__lt=timezone.now()).exclude(
+                status__in=[TaskAssignment.STATUS_REVIEWED, TaskAssignment.STATUS_COMPLETED, TaskAssignment.STATUS_CANCELLED]
+            )
+        if due_after:
+            qs = qs.filter(due_at__gte=due_after)
+        if due_before:
+            qs = qs.filter(due_at__lte=due_before)
+        return qs
+
+    # ---- list ----
+    def list(self, request):
+        user = request.user
+        role = getattr(user, "role", None)
+
+        if user.is_staff or getattr(user, "is_superuser", False):
+            qs = self._apply_filters(self._base_qs()).order_by("-created_at")
+
+        elif role == "trainer":
+            tp = self._trainer_profile(user)
+            q = Q()
+            if tp and getattr(tp, "department", None):
+                q &= Q(department__iexact=str(tp.department))
+            qs = self._apply_filters(self._base_qs().filter(q)).order_by("-created_at")
+
+        elif role in ("trainee", "employee"):
+            qs = self._apply_filters(self._base_qs().filter(assigned_to=user)).order_by("-created_at")
+
+        else:
+            return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+
+        ser = TaskAssignmentSerializer(qs, many=True)
+        return Response(ser.data)
+
+    # ---- create (trainer/admin) ----
+    def create(self, request):
+        user = request.user
+        if not (user.is_staff or getattr(user, "is_superuser", False) or getattr(user, "role", None) == "trainer"):
+            return Response({"error": "Only trainers or admins can create tasks."}, status=status.HTTP_403_FORBIDDEN)
+
+        ser = TaskAssignmentCreateSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        obj = TaskAssignment.objects.create(created_by=user, **ser.validated_data)
+        return Response(TaskAssignmentSerializer(obj).data, status=status.HTTP_201_CREATED)
+
+    # ---- retrieve ----
+    def retrieve(self, request, pk=None):
+        user = request.user
+        role = getattr(user, "role", None)
+        try:
+            obj = self._base_qs().get(pk=pk)
+        except TaskAssignment.DoesNotExist:
+            return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        if user.is_staff or getattr(user, "is_superuser", False):
+            pass
+        elif role == "trainer":
+            tp = self._trainer_profile(user)
+            dept = getattr(tp, "department", None) if tp else None
+            if not (dept and obj.department and str(dept).lower() == str(obj.department).lower()):
+                return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+        elif role in ("trainee", "employee"):
+            if obj.assigned_to_id != user.id:
+                return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+        else:
+            return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+
+        return Response(TaskAssignmentSerializer(obj).data)
+
+    # ---- partial update (trainer/admin) ----
+    def partial_update(self, request, pk=None):
+        user = request.user
+        if not (user.is_staff or getattr(user, "is_superuser", False) or getattr(user, "role", None) == "trainer"):
+            return Response({"error": "Only trainers or admins can update tasks."}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            obj = TaskAssignment.objects.get(pk=pk)
+        except TaskAssignment.DoesNotExist:
+            return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Allow editing common fields; status may be controlled via actions
+        allowed = {"title", "instructions", "department", "priority", "assigned_to", "due_at", "attachment", "max_marks", "requires_submission", "status"}
+        data = {k: v for k, v in request.data.items() if k in allowed}
+        for f, v in data.items():
+            setattr(obj, f, v)
+        obj.save()
+        return Response(TaskAssignmentSerializer(obj).data)
+
+    # ---- assignee starts work ----
+    @action(detail=True, methods=["post"])
+    def start(self, request, pk=None):
+        user = request.user
+        try:
+            obj = TaskAssignment.objects.get(pk=pk, assigned_to=user)
+        except TaskAssignment.DoesNotExist:
+            return Response({"error": "Not found or not your task."}, status=status.HTTP_404_NOT_FOUND)
+
+        if obj.status == TaskAssignment.STATUS_ASSIGNED:
+            obj.status = TaskAssignment.STATUS_IN_PROGRESS
+            obj.save(update_fields=["status", "updated_at"])
+        return Response(TaskAssignmentSerializer(obj).data)
+
+    # ---- attach existing submission (assignee) ----
+    @action(detail=True, methods=["post"], url_path="attach-submit")
+    def attach_submit(self, request, pk=None):
+        user = request.user
+        try:
+            obj = TaskAssignment.objects.get(pk=pk, assigned_to=user)
+        except TaskAssignment.DoesNotExist:
+            return Response({"error": "Not found or not your task."}, status=status.HTTP_404_NOT_FOUND)
+
+        ser = LinkSubmissionSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        sub = TraineeTaskSubmission.objects.get(pk=ser.validated_data["submission_id"])
+
+        # Security: only allow linking the assignee's own submission
+        if sub.trainee_id != user.id:
+            return Response({"error": "You can only link your own submission."}, status=status.HTTP_403_FORBIDDEN)
+
+        obj.submission = sub
+        # mirror state with submission
+        if sub.status == sub.STATUS_REVIEWED:
+            obj.status = TaskAssignment.STATUS_REVIEWED
+        else:
+            obj.status = TaskAssignment.STATUS_SUBMITTED
+        obj.save(update_fields=["submission", "status", "updated_at"])
+        return Response(TaskAssignmentSerializer(obj).data)
+
+    # ---- trainer/admin closes as completed ----
+    @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        user = request.user
+        if not (user.is_staff or getattr(user, "is_superuser", False) or getattr(user, "role", None) == "trainer"):
+            return Response({"error": "Only trainers or admins can complete tasks."}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            obj = TaskAssignment.objects.get(pk=pk)
+        except TaskAssignment.DoesNotExist:
+            return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        obj.status = TaskAssignment.STATUS_COMPLETED
+        obj.save(update_fields=["status", "updated_at"])
+        return Response(TaskAssignmentSerializer(obj).data)
+
+    # ---- trainer/admin cancels ----
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        user = request.user
+        if not (user.is_staff or getattr(user, "is_superuser", False) or getattr(user, "role", None) == "trainer"):
+            return Response({"error": "Only trainers or admins can cancel tasks."}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            obj = TaskAssignment.objects.get(pk=pk)
+        except TaskAssignment.DoesNotExist:
+            return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        obj.status = TaskAssignment.STATUS_CANCELLED
+        obj.save(update_fields=["status", "updated_at"])
+        return Response(TaskAssignmentSerializer(obj).data)

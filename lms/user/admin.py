@@ -2,7 +2,7 @@ from django.contrib import admin
 from .models import (
     CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile,Courses, CourseLesson,Macroplanner,Microplanner,Subject,Lesson,Query,QueryResponse,
     UserLoginActivity,AssessmentReport,Notification,NotificationReceipt,EmployeeLessonCompletion,TraineeLessonCompletion,AdminProfile,SOP,
-    StandardLibraryItem,TrainerLessonProgress,TraineeFeedback,TraineeTaskSubmission,Banner
+    StandardLibraryItem,TrainerLessonProgress,TraineeFeedback,TraineeTaskSubmission,Banner,TaskAssignment
     )
 from django_admin_listfilter_dropdown.filters import DropdownFilter
 
@@ -173,3 +173,53 @@ class BannerAdmin(admin.ModelAdmin):
     list_display = ("id", "title", "is_active", "created_at")
     list_filter = ("is_active", "created_at")
     search_fields = ("title", "text")
+
+@admin.register(TaskAssignment)
+class TaskAssignmentAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "title",
+        "assigned_to",
+        "department",
+        "status",
+        "priority",
+        "due_at",
+        "is_overdue_display",
+        "created_by",
+        "created_at",
+    )
+    list_filter = (
+        "status",
+        "priority",
+        "department",
+        "created_by",
+    )
+    search_fields = (
+        "title",
+        "instructions",
+        "assigned_to__username",
+        "department",
+    )
+    readonly_fields = ("created_at", "updated_at")
+    ordering = ("-created_at",)
+    date_hierarchy = "due_at"
+    autocomplete_fields = ["assigned_to", "created_by", "submission"]
+
+    fieldsets = (
+        ("Task Info", {
+            "fields": (
+                "title", "instructions", "department", "priority",
+                "assigned_to", "created_by", "due_at", "attachment"
+            ),
+        }),
+        ("Evaluation Settings", {
+            "fields": ("max_marks", "requires_submission", "submission", "status"),
+        }),
+        ("Timestamps", {
+            "fields": ("created_at", "updated_at"),
+        }),
+    )
+
+    @admin.display(description="Overdue?", boolean=True)
+    def is_overdue_display(self, obj):
+        return obj.is_overdue

@@ -3,7 +3,7 @@ from django.contrib.auth.password_validation import validate_password
 from .models import (
     CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile,AdminProfile,Courses, CourseLesson,Macroplanner,Microplanner,Assessment, AssessmentReport,EvaluationRemark
     ,TrainingReport,UserLoginActivity,Query,QueryResponse,Subject,Lesson,Notification,NotificationReceipt,SOP,StandardLibraryItem,
-    TrainerLessonProgress,TraineeFeedback,TraineeTaskSubmission,Banner
+    TrainerLessonProgress,TraineeFeedback,TraineeTaskSubmission,Banner,TaskAssignment
 )
 from django.contrib.auth import authenticate
 from quiz.serializers import ResultSerializer
@@ -1237,3 +1237,45 @@ class BannerSerializer(serializers.ModelSerializer):
             url = obj.image.url
             return request.build_absolute_uri(url) if request else url
         return None
+    
+class LiteSubmissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TraineeTaskSubmission
+        fields = ["id", "status", "marks", "feedback", "submitted_at", "reviewed_at"]
+
+class TaskAssignmentSerializer(serializers.ModelSerializer):
+    submission = LiteSubmissionSerializer(read_only=True)
+    assigned_to_username = serializers.ReadOnlyField(source="assigned_to.username")
+    created_by_username  = serializers.ReadOnlyField(source="created_by.username")
+    is_overdue = serializers.ReadOnlyField()
+
+    class Meta:
+        model = TaskAssignment
+        fields = [
+            "id", "title", "instructions", "department", "priority",
+            "assigned_to", "assigned_to_username",
+            "created_by", "created_by_username",
+            "due_at", "attachment", "max_marks",
+            "requires_submission", "submission",
+            "status", "is_overdue", "created_at", "updated_at"
+        ]
+        read_only_fields = ["created_by", "status", "is_overdue", "created_at", "updated_at"]
+
+class TaskAssignmentCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TaskAssignment
+        fields = [
+            "title", "instructions", "department", "priority",
+            "assigned_to", "due_at", "attachment", "max_marks",
+            "requires_submission"
+        ]
+
+class LinkSubmissionSerializer(serializers.Serializer):
+    submission_id = serializers.IntegerField()
+
+    def validate_submission_id(self, value):
+        try:
+            sub = TraineeTaskSubmission.objects.get(pk=value)
+        except TraineeTaskSubmission.DoesNotExist:
+            raise serializers.ValidationError("Submission not found.")
+        return value
