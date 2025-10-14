@@ -784,3 +784,89 @@ class Banner(models.Model):
 
     def __str__(self):
         return self.title
+    
+class TaskAssignment(models.Model):
+    # ---- statuses (for assignment lifecycle) ----
+    STATUS_ASSIGNED    = "assigned"       # created by trainer/admin
+    STATUS_IN_PROGRESS = "in_progress"    # assignee acknowledged/started
+    STATUS_SUBMITTED   = "submitted"      # linked to a submission
+    STATUS_REVIEWED    = "reviewed"       # submission reviewed
+    STATUS_COMPLETED   = "completed"      # optionally used when trainer/admin closes
+    STATUS_CANCELLED   = "cancelled"
+
+    STATUS_CHOICES = [
+        (STATUS_ASSIGNED,    "Assigned"),
+        (STATUS_IN_PROGRESS, "In Progress"),
+        (STATUS_SUBMITTED,   "Submitted"),
+        (STATUS_REVIEWED,    "Reviewed"),
+        (STATUS_COMPLETED,   "Completed"),
+        (STATUS_CANCELLED,   "Cancelled"),
+    ]
+
+    PRIORITY_LOW    = "low"
+    PRIORITY_MEDIUM = "medium"
+    PRIORITY_HIGH   = "high"
+    PRIORITY_CHOICES = [
+        (PRIORITY_LOW, "Low"),
+        (PRIORITY_MEDIUM, "Medium"),
+        (PRIORITY_HIGH, "High"),
+    ]
+
+    title        = models.CharField(max_length=200)
+    instructions = models.TextField(blank=True)
+    department   = models.CharField(max_length=120, blank=True)  # aligns with trainer dept scoping
+    priority     = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default=PRIORITY_MEDIUM)
+
+    assigned_to  = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name="assigned_tasks"
+    )
+    created_by   = models.ForeignKey(
+        CustomUser,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="created_tasks"
+    )
+
+    due_at       = models.DateTimeField(null=True, blank=True)
+    attachment   = models.FileField(upload_to="task_assignments/%Y/%m/%d/", null=True, blank=True)
+
+    max_marks            = models.PositiveSmallIntegerField(null=True, blank=True)
+    requires_submission  = models.BooleanField(default=True)
+
+    # Link to the actual work submitted
+    submission = models.OneToOneField(
+        "TraineeTaskSubmission",
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="assignment"
+    )
+
+    status      = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ASSIGNED)
+    created_at  = models.DateTimeField(auto_now_add=True)
+    updated_at  = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+    def __str__(self):
+        return f"[{self.get_status_display()}] {self.title} → {self.assigned_to}"
+
+    @property
+    def is_overdue(self):
+        return bool(self.due_at and timezone.now() > self.due_at and self.status not in (
+            self.STATUS_REVIEWED, self.STATUS_COMPLETED, self.STATUS_CANCELLED
+        ))
+
+    def bump_status_from_submission(self):
+        """
+        Keep assignment status in sync with linked submission.
+        """
+        if not self.submission:
+            return
+        if self.submission.status == self.submission.STATUS_REVIEWED:
+            self.status = self.STATUS_REVIEWED
+        else:
+            self.status = self.STATUS_SUBMITTED
+        self.save(update_fields=["status", "updated_at"])
