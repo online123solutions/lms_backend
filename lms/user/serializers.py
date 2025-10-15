@@ -1262,13 +1262,31 @@ class TaskAssignmentSerializer(serializers.ModelSerializer):
         read_only_fields = ["created_by", "status", "is_overdue", "created_at", "updated_at"]
 
 class TaskAssignmentCreateSerializer(serializers.ModelSerializer):
+    # Accept username as string (shows as string in Swagger)
+    assigned_to = serializers.CharField(write_only=True)
+
     class Meta:
         model = TaskAssignment
         fields = [
             "title", "instructions", "department", "priority",
             "assigned_to", "due_at", "attachment", "max_marks",
-            "requires_submission"
+            "requires_submission",
         ]
+
+    def validate_assigned_to(self, value: str):
+        # resolve case-insensitively; make it strict if you prefer exact match
+        try:
+            user = CustomUser.objects.get(username__iexact=value.strip())
+        except CustomUser.DoesNotExist:
+            raise serializers.ValidationError(f"User '{value}' not found.")
+        # Return the USER ID (clean handoff to create())
+        return user.id
+
+    def create(self, validated_data):
+        # We got an integer id from validate_assigned_to; bind it to *_id
+        user_id = validated_data.pop("assigned_to")
+        validated_data["assigned_to_id"] = user_id
+        return super().create(validated_data)
 
 class LinkSubmissionSerializer(serializers.Serializer):
     submission_id = serializers.IntegerField()

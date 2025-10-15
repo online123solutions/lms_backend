@@ -1097,6 +1097,7 @@ class TaskAssignmentViewSet(viewsets.ViewSet):
         return Response(ser.data)
 
     # ---- create (trainer/admin) ----
+    @swagger_auto_schema(request_body=TaskAssignmentCreateSerializer)
     def create(self, request):
         user = request.user
         if not (user.is_staff or getattr(user, "is_superuser", False) or getattr(user, "role", None) == "trainer"):
@@ -1104,7 +1105,7 @@ class TaskAssignmentViewSet(viewsets.ViewSet):
 
         ser = TaskAssignmentCreateSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        obj = TaskAssignment.objects.create(created_by=user, **ser.validated_data)
+        obj = ser.save(created_by=user)
         return Response(TaskAssignmentSerializer(obj).data, status=status.HTTP_201_CREATED)
 
     # ---- retrieve ----
