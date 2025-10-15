@@ -7,11 +7,12 @@ from .serializers import (
     SubjectSerializer, TraineeSerializer, LessonSerializer,QueryResponseSerializer, QuerySerializer,ContentEndSerializer,
     ContentStartSerializer,MacroplannerSerializer,MicroplannerSerializer,UserLoginActivitySerializer,NotificationReceiptSerializer,
     ActiveQuizListSerializer,TraineeProgressSerializer,TraineeFeedbackSerializer,TraineeTaskSubmissionSerializer,TraineeTaskReviewSerializer,
-    BannerSerializer
+    BannerSerializer,ConcernAssignSerializer,ConcernCreateSerializer,ConcernDetailSerializer,ConcernListSerializer,ConcernStatusSerializer,
+    ConcernCommentSerializer,ConcernCommentCreateSerializer
 )
 from .models import (
     Subject, Lesson,TraineeProfile, UserLoginActivity,Query,Macroplanner, Microplanner,CustomUser,AssessmentReport,NotificationReceipt,
-    TraineeLessonCompletion,TraineeTaskSubmission,Banner
+    TraineeLessonCompletion,TraineeTaskSubmission,Banner,Concern,ConcernComment
 )
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
@@ -873,3 +874,154 @@ class BannerViewSet(viewsets.ModelViewSet):
     serializer_class = BannerSerializer
     permission_classes = [permissions.AllowAny]  # adjust as needed
     parser_classes = [MultiPartParser, FormParser]  # to accept image uploads
+
+
+class IsAuth(permissions.IsAuthenticated):
+    pass
+
+class ConcernViewSet(viewsets.ViewSet):
+    """
+    GET    /concerns/                     -> list (role-aware)
+    POST   /concerns/                     -> create (trainee/employee/admin/trainer)
+    GET    /concerns/<pk>/                -> retrieve (role-aware)
+    PATCH  /concerns/<pk>/status/         -> change status (trainer/admin/assignee)
+    PATCH  /concerns/<pk>/assign/         -> assign to user by username (trainer/admin)
+    POST   /concerns/<pk>/comment/        -> add comment (participants + trainer/admin)
+    """
+    permission_classes = [IsAuth]
+    parser_classes = [MultiPartParser, FormParser]
+    pagination_class = None
+
+    # helpers
+    def _base_qs(self):
+        return Concern.objects.select_related("created_by", "assigned_to")
+
+    def _trainer_profile(self, user):
+        return getattr(user, "trainerprofile", None) or getattr(user, "trainer_profile", None)
+
+    def _apply_filters(self, qs):
+        p = self.request.query_params
+        status_q   = (p.get("status") or "").strip().lower()
+        prio_q     = (p.get("priority") or "").strip().lower()
+        dept_q     = (p.get("department") or "").strip()
+        assignee_q = (p.get("assignee") or "").strip()
+        creator_q  = (p.get("creator") or "").strip()
+        category_q = (p.get("category") or "").strip()
+
+        if status_q in dict(Concern.STATUS_CHOICES):
+            qs = qs.filter(status=status_q)
+        if prio_q in dict(Concern.PRIORITY_CHOICES):
+            qs = qs.filter(priority=prio_q)
+        if dept_q:
+            qs = qs.filter(department__iexact=dept_q)
+        if assignee_q:
+            qs = qs.filter(assigned_to__username=assignee_q)
+        if creator_q:
+            qs = qs.filter(created_by__username=creator_q)
+        if category_q:
+            qs = qs.filter(category__iexact=category_q)
+        return qs
+
+    # list
+    def list(self, request):
+        user = request.user
+        role = getattr(user, "role", None)
+
+        if user.is_staff or getattr(user, "is_superuser", False):
+            qs = self._apply_filters(self._base_qs()).order_by("-created_at")
+        elif role == "trainer":
+            tp = self._trainer_profile(user)
+            q = Q(assigned_to=user) | Q(department__iexact=getattr(tp, "department", "")) | Q(is_private=False)
+            qs = self._apply_filters(self._base_qs().filter(q)).order_by("-created_at")
+        else:  # trainee/employee
+            q = Q(created_by=user) | Q(assigned_to=user) | Q(is_private=False, department__iexact=getattr(user, "department", ""))
+            qs = self._apply_filters(self._base_qs().filter(q)).order_by("-created_at")
+
+        return Response(ConcernListSerializer(qs, many=True).data)
+
+    # create
+    def create(self, request):
+        ser = ConcernCreateSerializer(data=request.data, context={"request": request})
+        ser.is_valid(raise_exception=True)
+        obj = ser.save()
+        return Response(ConcernDetailSerializer(obj).data, status=status.HTTP_201_CREATED)
+
+    # retrieve
+    def retrieve(self, request, pk=None):
+        try:
+            obj = self._base_qs().get(pk=pk)
+        except Concern.DoesNotExist:
+            return Response({"error": "Not found"}, status=404)
+
+        user = request.user
+        if user.is_staff or getattr(user, "is_superuser", False):
+            pass
+        elif obj.is_private:
+            # Only creator, assignee, relevant trainer dept can view private concerns
+            allowed = {obj.created_by_id, getattr(obj.assigned_to, "id", None)}
+            if user.id not in allowed:
+                tp = self._trainer_profile(user)
+                if not (tp and obj.department and str(tp.department).lower() == str(obj.department).lower()):
+                    return Response({"error": "Unauthorized"}, status=403)
+        # public concerns are visible by dept (already covered in list)
+        return Response(ConcernDetailSerializer(obj).data)
+
+    # change status
+    @action(detail=True, methods=["patch"], url_path="status")
+    def change_status(self, request, pk=None):
+        try:
+            obj = Concern.objects.get(pk=pk)
+        except Concern.DoesNotExist:
+            return Response({"error": "Not found"}, status=404)
+
+        user = request.user
+        is_admin = user.is_staff or getattr(user, "is_superuser", False)
+        is_handler = obj.assigned_to_id == user.id
+        is_trainer = getattr(user, "role", None) == "trainer"
+        if not (is_admin or is_handler or is_trainer):
+            return Response({"error": "Unauthorized"}, status=403)
+
+        ser = ConcernStatusSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        obj.status = ser.validated_data["status"]
+        obj.save(update_fields=["status", "updated_at"])
+        return Response(ConcernDetailSerializer(obj).data)
+
+    # assign to user (by username)
+    @action(detail=True, methods=["patch"], url_path="assign")
+    def assign(self, request, pk=None):
+        try:
+            obj = Concern.objects.get(pk=pk)
+        except Concern.DoesNotExist:
+            return Response({"error": "Not found"}, status=404)
+
+        user = request.user
+        if not (user.is_staff or getattr(user, "is_superuser", False) or getattr(user, "role", None) == "trainer"):
+            return Response({"error": "Only trainers/admins can assign concerns."}, status=403)
+
+        ser = ConcernAssignSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        obj.assigned_to = ser.validated_data["assigned_to"]
+        obj.status = Concern.ST_INPROGRESS
+        obj.save(update_fields=["assigned_to", "status", "updated_at"])
+        return Response(ConcernDetailSerializer(obj).data)
+
+    # comment
+    @action(detail=True, methods=["post"], url_path="comment", parser_classes=[MultiPartParser, FormParser])
+    def comment(self, request, pk=None):
+        try:
+            obj = Concern.objects.get(pk=pk)
+        except Concern.DoesNotExist:
+            return Response({"error": "Not found"}, status=404)
+
+        # Only creator, assignee, trainers/admin may comment
+        user = request.user
+        is_admin = user.is_staff or getattr(user, "is_superuser", False)
+        is_trainer = getattr(user, "role", None) == "trainer"
+        if not (is_admin or is_trainer or user.id in (obj.created_by_id, getattr(obj.assigned_to, "id", None))):
+            return Response({"error": "Unauthorized"}, status=403)
+
+        ser = ConcernCommentCreateSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        c = ConcernComment.objects.create(concern=obj, author=user, **ser.validated_data)
+        return Response(ConcernCommentSerializer(c).data, status=201)

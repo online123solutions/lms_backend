@@ -3,7 +3,7 @@ from django.contrib.auth.password_validation import validate_password
 from .models import (
     CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile,AdminProfile,Courses, CourseLesson,Macroplanner,Microplanner,Assessment, AssessmentReport,EvaluationRemark
     ,TrainingReport,UserLoginActivity,Query,QueryResponse,Subject,Lesson,Notification,NotificationReceipt,SOP,StandardLibraryItem,
-    TrainerLessonProgress,TraineeFeedback,TraineeTaskSubmission,Banner,TaskAssignment
+    TrainerLessonProgress,TraineeFeedback,TraineeTaskSubmission,Banner,TaskAssignment,Concern,ConcernComment
 )
 from django.contrib.auth import authenticate
 from quiz.serializers import ResultSerializer
@@ -1297,3 +1297,88 @@ class LinkSubmissionSerializer(serializers.Serializer):
         except TraineeTaskSubmission.DoesNotExist:
             raise serializers.ValidationError("Submission not found.")
         return value
+    
+class ConcernCommentSerializer(serializers.ModelSerializer):
+    author_username = serializers.ReadOnlyField(source="author.username")
+
+    class Meta:
+        model = ConcernComment
+        fields = ["id", "author", "author_username", "message", "attachment", "internal", "created_at"]
+        read_only_fields = ["author", "author_username", "created_at"]
+
+class ConcernListSerializer(serializers.ModelSerializer):
+    created_by_username = serializers.ReadOnlyField(source="created_by.username")
+    assigned_to_username = serializers.ReadOnlyField(source="assigned_to.username")
+
+    class Meta:
+        model = Concern
+        fields = [
+            "id", "title", "category", "priority", "status",
+            "department", "created_by", "created_by_username",
+            "assigned_to", "assigned_to_username",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ["created_by", "created_at", "updated_at"]
+
+class ConcernDetailSerializer(serializers.ModelSerializer):
+    created_by_username = serializers.ReadOnlyField(source="created_by.username")
+    assigned_to_username = serializers.ReadOnlyField(source="assigned_to.username")
+    comments = ConcernCommentSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Concern
+        fields = [
+            "id", "title", "description", "category", "priority",
+            "status", "department", "is_private",
+            "attachment",
+            "created_by", "created_by_username",
+            "assigned_to", "assigned_to_username",
+            "created_at", "updated_at",
+            "comments",
+        ]
+        read_only_fields = ["created_by", "created_at", "updated_at"]
+
+class ConcernCreateSerializer(serializers.ModelSerializer):
+    # allow assigning by username optionally
+    assigned_to = serializers.CharField(required=False, allow_blank=True)
+
+    class Meta:
+        model = Concern
+        fields = [
+            "title", "description", "category", "priority",
+            "department", "is_private", "attachment", "assigned_to"
+        ]
+
+    def validate_assigned_to(self, value):
+        if not value:
+            return None
+        try:
+            return CustomUser.objects.get(username__iexact=value)
+        except CustomUser.DoesNotExist:
+            raise serializers.ValidationError(f"User '{value}' not found.")
+
+    def create(self, validated_data):
+        assigned_obj = validated_data.pop("assigned_to", None)
+        user = self.context["request"].user
+        obj = Concern.objects.create(created_by=user, **validated_data)
+        if assigned_obj:
+            obj.assigned_to = assigned_obj
+            obj.save(update_fields=["assigned_to", "updated_at"])
+        return obj
+
+class ConcernAssignSerializer(serializers.Serializer):
+    assigned_to = serializers.CharField()
+
+    def validate_assigned_to(self, value):
+        try:
+            return CustomUser.objects.get(username__iexact=value)
+        except CustomUser.DoesNotExist:
+            raise serializers.ValidationError(f"User '{value}' not found.")
+
+class ConcernStatusSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=Concern.STATUS_CHOICES)
+
+class ConcernCommentCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ConcernComment
+        fields = ["message", "attachment", "internal"]

@@ -870,3 +870,73 @@ class TaskAssignment(models.Model):
         else:
             self.status = self.STATUS_SUBMITTED
         self.save(update_fields=["status", "updated_at"])
+
+
+class Concern(models.Model):
+    # lifecycle
+    ST_OPEN       = "open"
+    ST_INPROGRESS = "in_progress"
+    ST_RESOLVED   = "resolved"
+    ST_CLOSED     = "closed"
+    STATUS_CHOICES = [
+        (ST_OPEN, "Open"),
+        (ST_INPROGRESS, "In Progress"),
+        (ST_RESOLVED, "Resolved"),
+        (ST_CLOSED, "Closed"),
+    ]
+
+    PR_LOW    = "low"
+    PR_MEDIUM = "medium"
+    PR_HIGH   = "high"
+    PRIORITY_CHOICES = [
+        (PR_LOW, "Low"),
+        (PR_MEDIUM, "Medium"),
+        (PR_HIGH, "High"),
+    ]
+
+    # who raised it
+    created_by = models.ForeignKey(
+        CustomUser, on_delete=models.CASCADE, related_name="concerns_raised"
+    )
+
+    # optional routing / visibility
+    department = models.CharField(max_length=120, blank=True)
+    assigned_to = models.ForeignKey(
+        CustomUser, on_delete=models.SET_NULL, null=True, blank=True, related_name="concerns_assigned"
+    )  # trainer/admin who owns it
+
+    title       = models.CharField(max_length=200)
+    description = models.TextField()
+    category    = models.CharField(max_length=100, blank=True)  # e.g. HR, Technical, General
+    priority    = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default=PR_MEDIUM)
+
+    status      = models.CharField(max_length=20, choices=STATUS_CHOICES, default=ST_OPEN)
+    attachment  = models.FileField(upload_to="concerns/%Y/%m/%d/", null=True, blank=True)
+
+    is_private  = models.BooleanField(default=True)  # if True, only creator + handlers see it
+
+    created_at  = models.DateTimeField(auto_now_add=True)
+    updated_at  = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+    def __str__(self):
+        return f"[{self.get_status_display()}] {self.title} by {self.created_by}"
+
+class ConcernComment(models.Model):
+    concern = models.ForeignKey(Concern, on_delete=models.CASCADE, related_name="comments")
+    author  = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="concern_comments")
+    message = models.TextField()
+    attachment = models.FileField(upload_to="concern_comments/%Y/%m/%d/", null=True, blank=True)
+
+    # snapshot fields (optional)
+    internal = models.BooleanField(default=False)  # trainer/admin private note (hide from creator if needed)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("created_at",)
+
+    def __str__(self):
+        return f"Comment by {self.author} on #{self.concern_id}"

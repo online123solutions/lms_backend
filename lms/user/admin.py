@@ -2,7 +2,7 @@ from django.contrib import admin
 from .models import (
     CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile,Courses, CourseLesson,Macroplanner,Microplanner,Subject,Lesson,Query,QueryResponse,
     UserLoginActivity,AssessmentReport,Notification,NotificationReceipt,EmployeeLessonCompletion,TraineeLessonCompletion,AdminProfile,SOP,
-    StandardLibraryItem,TrainerLessonProgress,TraineeFeedback,TraineeTaskSubmission,Banner,TaskAssignment
+    StandardLibraryItem,TrainerLessonProgress,TraineeFeedback,TraineeTaskSubmission,Banner,TaskAssignment,Concern,ConcernComment
     )
 from django_admin_listfilter_dropdown.filters import DropdownFilter
 
@@ -223,3 +223,20 @@ class TaskAssignmentAdmin(admin.ModelAdmin):
     @admin.display(description="Overdue?", boolean=True)
     def is_overdue_display(self, obj):
         return obj.is_overdue
+    
+@admin.register(Concern)
+class ConcernAdmin(admin.ModelAdmin):
+    list_display = ("id", "title", "created_by", "assigned_to", "department", "priority", "status", "created_at")
+    list_filter = ("status", "priority", "department", "category", "created_at")
+    search_fields = ("title", "description", "created_by__username", "assigned_to__username", "department", "category")
+    readonly_fields = ("created_at", "updated_at")
+    autocomplete_fields = ["created_by", "assigned_to"]
+    ordering = ("-created_at",)
+
+@admin.register(ConcernComment)
+class ConcernCommentAdmin(admin.ModelAdmin):
+    list_display = ("id", "concern", "author", "internal", "created_at")
+    list_filter = ("internal", "created_at")
+    search_fields = ("concern__title", "author__username", "message")
+    readonly_fields = ("created_at",)
+    autocomplete_fields = ["concern", "author"]
