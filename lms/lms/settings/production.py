@@ -1,7 +1,7 @@
 from .base import *
 from pathlib import Path
 
-ALLOWED_HOSTS = ['lms.steel.study', 'steel.study', '127.0.0.1', 'localhost']
+ALLOWED_HOSTS = ['lms.steel.study', 'steel.study', '127.0.0.1', 'localhost','app.steel.study']
 
 DEBUG=False
 
@@ -39,14 +39,18 @@ CORS_ALLOWED_ORIGINS = [
     'http://localhost:3000',
     "https://lmsfrontend-ki924.ondigitalocean.app",
     "https://steel.study",
-    "https://www.steel.study"
+    "https://www.steel.study",
+    "https://app.steel.study",
+    "https://www.app.steel.study"
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:3000',
     "https://lmsfrontend-ki924.ondigitalocean.app",
     "https://steel.study",
-    "https://www.steel.study"
+    "https://www.steel.study",
+    "https://app.steel.study",
+    "https://www.app.steel.study"
 ]
 
 SECURE_CROSS_ORIGIN_OPENER_POLICY = None
