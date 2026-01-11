@@ -247,9 +247,15 @@ class UploadUsersExcelView(APIView):
                 user.set_password(password)
                 user.save()
 
-                # Create appropriate profile using get_or_create to avoid duplicates
+                # Convert string fields to strings (Excel may read them as other types)
+                name = str(name) if name else ""
+                employee_id = str(employee_id) if employee_id else ""
+                department = str(department) if department else ""
+                designation = str(designation) if designation else ""
+
+                # Update or create profile (signal may have already created empty profile)
                 if role == 'trainee':
-                    TraineeProfile.objects.get_or_create(
+                    TraineeProfile.objects.update_or_create(
                         user=user,
                         defaults={
                             'name': name,
@@ -259,7 +265,7 @@ class UploadUsersExcelView(APIView):
                         }
                     )
                 elif role == 'employee':
-                    EmployeeProfile.objects.get_or_create(
+                    EmployeeProfile.objects.update_or_create(
                         user=user,
                         defaults={
                             'name': name,
@@ -269,7 +275,7 @@ class UploadUsersExcelView(APIView):
                         }
                     )
                 elif role == 'trainer':
-                    TrainerProfile.objects.get_or_create(
+                    TrainerProfile.objects.update_or_create(
                         user=user,
                         defaults={
                             'name': name,
@@ -279,7 +285,7 @@ class UploadUsersExcelView(APIView):
                         }
                     )
                 elif role == 'admin':
-                    AdminProfile.objects.get_or_create(
+                    AdminProfile.objects.update_or_create(
                         user=user,
                         defaults={
                             'name': name,
