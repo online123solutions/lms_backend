@@ -216,53 +216,81 @@ class UploadUsersExcelView(APIView):
 
         for index, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
             try:
-                role, username, name, email, password, employee_id, department, designation= row
+                # Column order: role, username, email, password, name, employee_id, department, designation
+                role, username, email, password, name, employee_id, department, designation = row
 
-                if not all([role, username,name, email, password, employee_id, department, designation]):
+                if not all([role, username, email, password, name, employee_id, department, designation]):
                     raise ValueError("Missing required fields.")
 
                 if role not in ['trainee', 'employee', 'trainer', 'admin']:
                     raise ValueError(f"Invalid role: {role}")
 
-                user, created = CustomUser.objects.get_or_create(username=username, email=email)
-                if created:
-                    user.set_password(password)
-                    user.role = role
-                    user.is_active = False
-                    user.save()
+                # Convert password to string (Excel may read numbers as integers)
+                password = str(password)
 
-                    # Create appropriate profile
-                    if role == 'trainee':
-                        TraineeProfile.objects.create(
-                            user=user,
-                            employee_id=employee_id,
-                            department=department,
-                            designation=designation
-                        )
-                    elif role == 'employee':
-                        EmployeeProfile.objects.create(
-                            user=user,
-                            employee_id=employee_id,
-                            department=department,
-                            designation=designation
-                        )
-                    elif role == 'trainer':
-                        TrainerProfile.objects.create(
-                            user=user,
-                            employee_id=employee_id,
-                            department=department
-                        )
-                    elif role == 'admin':
-                        AdminProfile.objects.create(
-                            user=user,
-                            employee_id=employee_id,
-                            department=department
-                        )
+                # Check if user exists by email or username (both are unique)
+                user = CustomUser.objects.filter(Q(email=email) | Q(username=username)).first()
+                
+                if user:
+                    # User already exists, skip this row
+                    errors.append(f"Row {index}: User already exists (email: {email}, username: {username})")
+                    error_count += 1
+                    continue
 
-                    send_welcome_email.delay(email)
-                    success_count += 1
-                else:
-                    raise ValueError(f"User already exists: {username}")
+                # Create new user
+                user = CustomUser.objects.create(
+                    username=username,
+                    email=email,
+                    role=role,
+                    is_active=False
+                )
+                user.set_password(password)
+                user.save()
+
+                # Create appropriate profile using get_or_create to avoid duplicates
+                if role == 'trainee':
+                    TraineeProfile.objects.get_or_create(
+                        user=user,
+                        defaults={
+                            'name': name,
+                            'employee_id': employee_id,
+                            'department': department,
+                            'designation': designation
+                        }
+                    )
+                elif role == 'employee':
+                    EmployeeProfile.objects.get_or_create(
+                        user=user,
+                        defaults={
+                            'name': name,
+                            'employee_id': employee_id,
+                            'department': department,
+                            'designation': designation
+                        }
+                    )
+                elif role == 'trainer':
+                    TrainerProfile.objects.get_or_create(
+                        user=user,
+                        defaults={
+                            'name': name,
+                            'employee_id': employee_id,
+                            'department': department,
+                            'designation': designation
+                        }
+                    )
+                elif role == 'admin':
+                    AdminProfile.objects.get_or_create(
+                        user=user,
+                        defaults={
+                            'name': name,
+                            'employee_id': employee_id,
+                            'department': department,
+                            'designation': designation
+                        }
+                    )
+
+                send_welcome_email.delay(email)
+                success_count += 1
 
             except Exception as e:
                 error_count += 1

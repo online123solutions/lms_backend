@@ -1,4 +1,4 @@
-#!/home/shahnawaz/Desktop/Shahnawaz/solutions-lms/venv/bin/python3
+#!/home/soladmin/Desktop/lms_backend/venv/bin/python3
 # -*- coding: utf-8 -*-
 # Copyright 2025 Google LLC
 #
