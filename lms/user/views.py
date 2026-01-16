@@ -392,8 +392,8 @@ class TraineeProfileUpdateView(APIView):
     """
     API endpoint for trainees to update their own profile.
     Only allows updating: name, department, designation, and profile_picture
+    Supports both Token and Session authentication.
     """
-    authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
     parser_classes = (MultiPartParser, FormParser)
 
@@ -500,8 +500,8 @@ class TrainerProfileUpdateView(APIView):
     """
     API endpoint for trainers to update their own profile.
     Only allows updating: name, department, designation, expertise, and profile_picture
+    Supports both Token and Session authentication.
     """
-    authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
     parser_classes = (MultiPartParser, FormParser)
 

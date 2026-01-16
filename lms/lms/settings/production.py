@@ -50,13 +50,20 @@ CSRF_TRUSTED_ORIGINS = [
     "https://steel.study",
     "https://www.steel.study",
     "https://app.steel.study",
-    "https://www.app.steel.study"
+    "https://www.app.steel.study",
+    "https://lms.steel.study"
 ]
+
+CORS_ALLOW_CREDENTIALS = True
 
 SECURE_CROSS_ORIGIN_OPENER_POLICY = None
 CSRF_COOKIE_SECURE = True
 CSRF_COOKIE_HTTPONLY = False  # Allow frontend to access it
 CSRF_COOKIE_SAMESITE = "None"  # Required for cross-origin requests
+
+SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "None"  # Required for cross-origin requests
 
 CELERY_BROKER_URL = 'redis://127.0.0.1:6379/0'
 CELERY_ACCEPT_CONTENT = ['json']
