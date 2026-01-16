@@ -16,6 +16,7 @@ from django.contrib.auth import authenticate
 from django.contrib.auth import login,logout
 from rest_framework.permissions import IsAuthenticated,AllowAny
 from rest_framework.authentication import TokenAuthentication
+from rest_framework.authentication import TokenAuthentication
 import openpyxl
 from django.http import HttpResponse
 from django.core.files.storage import default_storage
@@ -392,6 +393,7 @@ class TraineeProfileUpdateView(APIView):
     API endpoint for trainees to update their own profile.
     Only allows updating: name, department, designation, and profile_picture
     """
+    authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
     parser_classes = (MultiPartParser, FormParser)
 
@@ -499,6 +501,7 @@ class TrainerProfileUpdateView(APIView):
     API endpoint for trainers to update their own profile.
     Only allows updating: name, department, designation, expertise, and profile_picture
     """
+    authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
     parser_classes = (MultiPartParser, FormParser)
 
