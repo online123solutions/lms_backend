@@ -255,6 +255,50 @@ class UserExcelUploadSerializer(serializers.Serializer):
         if not value.name.endswith('.xlsx'):
             raise serializers.ValidationError("Only .xlsx files are allowed.")
         return value
+
+
+class TraineeProfileUpdateSerializer(serializers.ModelSerializer):
+    """Serializer for trainee to update their own profile"""
+    class Meta:
+        model = TraineeProfile
+        fields = ['name', 'employee_id', 'department', 'designation', 'profile_picture']
+        read_only_fields = ['employee_id']  # Employee ID should not be changed by user
+
+    def to_representation(self, instance):
+        """Return absolute URL for profile picture"""
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        if request:
+            try:
+                if instance.profile_picture and hasattr(instance.profile_picture, 'url'):
+                    data['profile_picture'] = request.build_absolute_uri(instance.profile_picture.url)
+                else:
+                    data['profile_picture'] = None
+            except Exception:
+                data['profile_picture'] = None
+        return data
+
+
+class TrainerProfileUpdateSerializer(serializers.ModelSerializer):
+    """Serializer for trainer to update their own profile"""
+    class Meta:
+        model = TrainerProfile
+        fields = ['name', 'employee_id', 'department', 'designation', 'expertise', 'profile_picture']
+        read_only_fields = ['employee_id']  # Employee ID should not be changed by user
+
+    def to_representation(self, instance):
+        """Return absolute URL for profile picture"""
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        if request:
+            try:
+                if instance.profile_picture and hasattr(instance.profile_picture, 'url'):
+                    data['profile_picture'] = request.build_absolute_uri(instance.profile_picture.url)
+                else:
+                    data['profile_picture'] = None
+            except Exception:
+                data['profile_picture'] = None
+        return data
     
 
 class CourseSerializer(serializers.ModelSerializer):

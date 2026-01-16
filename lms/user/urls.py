@@ -1,7 +1,7 @@
 from django.urls import path,include
 from .views import (
     RegistrationView,LoginView,UserLogoutView,DownloadUserTemplate,UploadUsersExcelView,mark_notification_read,PasswordResetRequestView,
-    PasswordResetConfirmView
+    PasswordResetConfirmView, TraineeProfileUpdateView, TrainerProfileUpdateView
 )
 from .TrainerView import (
     TrainerDashboardView, TrainerCourseView,TrainerCourseLessonView,MacroplannerViewSet, MicroplannerViewSet,AssessmentListCreateView,
@@ -59,6 +59,7 @@ urlpatterns = [
 
 
     #Trainer Urls
+    path('trainer/profile/', TrainerProfileUpdateView.as_view(), name='trainer-profile-update'),
     path('trainer/courses/', TrainerCourseView.as_view(), name='courses'), 
     path('trainer/course-lessons/', TrainerCourseLessonView.as_view(), name='course-lessons'),
     path('trainer/assessments/', AssessmentListCreateView.as_view(), name='trainer-assessments'),
@@ -82,6 +83,7 @@ urlpatterns = [
     path('trainer/<str:username>/', TrainerDashboardView.as_view(), name='teacher-dashboard'),
 
     # Trainee Urls
+    path('trainee/profile/', TraineeProfileUpdateView.as_view(), name='trainee-profile-update'),
     path('trainee/quiz_available', AvailableQuizListAPIView.as_view(), name='quiz_available'),
     path('trainee/queries/', TraineeQueryListAPIView.as_view(), name='trainee-query-list'),
     path('trainee/queries/create/', TraineeQueryCreateAPIView.as_view(), name='trainee-query-create'),

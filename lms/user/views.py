@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from .serializers import (
     TraineeSerializer, EmployeeSerializer, TrainerSerializer, AdminSerializer, LoginSerializer,UserExcelUploadSerializer,PasswordResetRequestSerializer,
-    SOPSerializer,StandardLibraryItemSerializer
+    SOPSerializer,StandardLibraryItemSerializer, TraineeProfileUpdateSerializer, TrainerProfileUpdateSerializer
 )
 from .models import (
     CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile, AdminProfile,NotificationReceipt,SOP,StandardLibraryItem
@@ -15,6 +15,7 @@ from rest_framework.authtoken.models import Token
 from django.contrib.auth import authenticate
 from django.contrib.auth import login,logout
 from rest_framework.permissions import IsAuthenticated,AllowAny
+from rest_framework.authentication import TokenAuthentication
 import openpyxl
 from django.http import HttpResponse
 from django.core.files.storage import default_storage
@@ -384,7 +385,221 @@ class PasswordResetConfirmView(APIView):
             return Response({"detail": "Invalid token or user ID."}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({"detail": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class TraineeProfileUpdateView(APIView):
+    """
+    API endpoint for trainees to update their own profile.
+    Only allows updating: name, department, designation, and profile_picture
+    """
+    permission_classes = [IsAuthenticated]
+    parser_classes = (MultiPartParser, FormParser)
+
+    @swagger_auto_schema(
+        operation_description="Get current trainee profile. Only the authenticated trainee can access their own profile.",
+        responses={
+            200: openapi.Response("Profile retrieved successfully", TraineeProfileUpdateSerializer),
+            403: "Forbidden - Only trainees can access this endpoint",
+            404: "Profile not found"
+        },
+    )
+    def get(self, request):
+        """Get current trainee profile"""
+        if request.user.role != 'trainee':
+            return Response(
+                {"detail": "Only trainees can access this endpoint."},
+                status=status.HTTP_403_FORBIDDEN
+            )
         
+        try:
+            profile = TraineeProfile.objects.get(user=request.user)
+            serializer = TraineeProfileUpdateSerializer(profile, context={'request': request})
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except TraineeProfile.DoesNotExist:
+            return Response(
+                {"detail": "Profile not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @swagger_auto_schema(
+        operation_description="Update trainee profile. Only the authenticated trainee can update their own profile.",
+        request_body=TraineeProfileUpdateSerializer,
+        responses={
+            200: openapi.Response("Profile updated successfully", TraineeProfileUpdateSerializer),
+            400: "Bad Request",
+            403: "Forbidden - Only trainees can access this endpoint",
+            404: "Profile not found"
+        },
+    )
+    def put(self, request):
+        """Update trainee profile (full update)"""
+        if request.user.role != 'trainee':
+            return Response(
+                {"detail": "Only trainees can access this endpoint."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            profile = TraineeProfile.objects.get(user=request.user)
+            serializer = TraineeProfileUpdateSerializer(
+                profile, 
+                data=request.data, 
+                partial=False,
+                context={'request': request}
+            )
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except TraineeProfile.DoesNotExist:
+            return Response(
+                {"detail": "Profile not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @swagger_auto_schema(
+        operation_description="Partially update trainee profile. Only the authenticated trainee can update their own profile.",
+        request_body=TraineeProfileUpdateSerializer,
+        responses={
+            200: openapi.Response("Profile updated successfully", TraineeProfileUpdateSerializer),
+            400: "Bad Request",
+            403: "Forbidden - Only trainees can access this endpoint",
+            404: "Profile not found"
+        },
+    )
+    def patch(self, request):
+        """Partially update trainee profile"""
+        if request.user.role != 'trainee':
+            return Response(
+                {"detail": "Only trainees can access this endpoint."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            profile = TraineeProfile.objects.get(user=request.user)
+            serializer = TraineeProfileUpdateSerializer(
+                profile, 
+                data=request.data, 
+                partial=True,
+                context={'request': request}
+            )
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except TraineeProfile.DoesNotExist:
+            return Response(
+                {"detail": "Profile not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class TrainerProfileUpdateView(APIView):
+    """
+    API endpoint for trainers to update their own profile.
+    Only allows updating: name, department, designation, expertise, and profile_picture
+    """
+    permission_classes = [IsAuthenticated]
+    parser_classes = (MultiPartParser, FormParser)
+
+    @swagger_auto_schema(
+        operation_description="Get trainer profile. Only the authenticated trainer can access their own profile.",
+        responses={
+            200: openapi.Response("Profile retrieved successfully", TrainerProfileUpdateSerializer),
+            403: "Forbidden - Only trainers can access this endpoint",
+            404: "Profile not found"
+        },
+    )
+    def get(self, request):
+        """Get current trainer profile"""
+        if request.user.role != 'trainer':
+            return Response(
+                {"detail": "Only trainers can access this endpoint."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            profile = TrainerProfile.objects.get(user=request.user)
+            serializer = TrainerProfileUpdateSerializer(profile, context={'request': request})
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except TrainerProfile.DoesNotExist:
+            return Response(
+                {"detail": "Profile not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @swagger_auto_schema(
+        operation_description="Update trainer profile. Only the authenticated trainer can update their own profile.",
+        request_body=TrainerProfileUpdateSerializer,
+        responses={
+            200: openapi.Response("Profile updated successfully", TrainerProfileUpdateSerializer),
+            400: "Bad Request",
+            403: "Forbidden - Only trainers can access this endpoint",
+            404: "Profile not found"
+        },
+    )
+    def put(self, request):
+        """Update trainer profile (full update)"""
+        if request.user.role != 'trainer':
+            return Response(
+                {"detail": "Only trainers can access this endpoint."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            profile = TrainerProfile.objects.get(user=request.user)
+            serializer = TrainerProfileUpdateSerializer(
+                profile, 
+                data=request.data, 
+                partial=False,
+                context={'request': request}
+            )
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except TrainerProfile.DoesNotExist:
+            return Response(
+                {"detail": "Profile not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @swagger_auto_schema(
+        operation_description="Partially update trainer profile. Only the authenticated trainer can update their own profile.",
+        request_body=TrainerProfileUpdateSerializer,
+        responses={
+            200: openapi.Response("Profile updated successfully", TrainerProfileUpdateSerializer),
+            400: "Bad Request",
+            403: "Forbidden - Only trainers can access this endpoint",
+            404: "Profile not found"
+        },
+    )
+    def patch(self, request):
+        """Partially update trainer profile"""
+        if request.user.role != 'trainer':
+            return Response(
+                {"detail": "Only trainers can access this endpoint."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            profile = TrainerProfile.objects.get(user=request.user)
+            serializer = TrainerProfileUpdateSerializer(
+                profile, 
+                data=request.data, 
+                partial=True,
+                context={'request': request}
+            )
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except TrainerProfile.DoesNotExist:
+            return Response(
+                {"detail": "Profile not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
 
 LENIENT_IF_NO_DEPT = True  # set False to be strict
 
