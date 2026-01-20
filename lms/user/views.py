@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from .serializers import (
     TraineeSerializer, EmployeeSerializer, TrainerSerializer, AdminSerializer, LoginSerializer,UserExcelUploadSerializer,PasswordResetRequestSerializer,
-    SOPSerializer,StandardLibraryItemSerializer, TraineeProfileUpdateSerializer, TrainerProfileUpdateSerializer
+    SOPSerializer,StandardLibraryItemSerializer, TraineeProfileUpdateSerializer, TrainerProfileUpdateSerializer, ChangePasswordSerializer
 )
 from .models import (
     CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile, AdminProfile,NotificationReceipt,SOP,StandardLibraryItem
@@ -386,6 +386,44 @@ class PasswordResetConfirmView(APIView):
             return Response({"detail": "Invalid token or user ID."}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({"detail": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ChangePasswordView(APIView):
+    """
+    API endpoint for any authenticated user (trainee, trainer, employee, admin) 
+    to change their own password.
+    Requires old password and new password confirmation.
+    No email required - direct password change in the app.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Change password for the authenticated user. Requires old password and new password confirmation. Available for all roles.",
+        request_body=ChangePasswordSerializer,
+        responses={
+            200: "Password changed successfully",
+            400: "Bad Request - Invalid old password or passwords don't match",
+            401: "Unauthorized"
+        },
+    )
+    def post(self, request):
+        """Change password for the authenticated user"""
+        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+        
+        if serializer.is_valid():
+            user = request.user
+            new_password = serializer.validated_data['new_password']
+            
+            # Set new password
+            user.set_password(new_password)
+            user.save()
+            
+            return Response(
+                {"detail": "Password has been changed successfully."},
+                status=status.HTTP_200_OK
+            )
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class TraineeProfileUpdateView(APIView):

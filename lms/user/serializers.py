@@ -768,6 +768,67 @@ class PasswordResetRequestSerializer(serializers.Serializer):
         if not CustomUser.objects.filter(email=value).exists():
             raise serializers.ValidationError("A user with this email does not exist.")
         return value
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """
+    Logged-in user changes their own password (no email).
+    Available for all roles: trainee, trainer, employee, admin.
+    """
+    old_password = serializers.CharField(
+        write_only=True, 
+        required=True,
+        help_text="Current password"
+    )
+    new_password = serializers.CharField(
+        write_only=True, 
+        required=True,
+        min_length=8,
+        help_text="New password (minimum 8 characters)"
+    )
+    confirm_password = serializers.CharField(
+        write_only=True, 
+        required=True,
+        help_text="Confirm new password"
+    )
+
+    def validate_old_password(self, value):
+        """Validate that the old password is correct"""
+        user = self.context.get('request').user
+        if not user.check_password(value):
+            raise serializers.ValidationError("Current password is incorrect.")
+        return value
+
+    def validate(self, attrs):
+        new_password = attrs.get("new_password")
+        confirm_password = attrs.get("confirm_password")
+        if new_password != confirm_password:
+            raise serializers.ValidationError({"confirm_password": "New password and confirm password do not match."})
+
+        # Validate new password using Django's password validators
+        user = self.context.get('request').user
+        validate_password(new_password, user)
+        return attrs
+
+
+class AdminResetPasswordSerializer(serializers.Serializer):
+    """
+    Admin resets any user's password (no email).
+    """
+    identifier = serializers.CharField(
+        required=True,
+        help_text="Target user identifier: username or email.",
+    )
+    new_password = serializers.CharField(write_only=True, required=True)
+    confirm_password = serializers.CharField(write_only=True, required=True)
+
+    def validate(self, attrs):
+        new_password = attrs.get("new_password")
+        confirm_password = attrs.get("confirm_password")
+        if new_password != confirm_password:
+            raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
+        validate_password(new_password)
+        return attrs
     
 
 class SOPSerializer(serializers.ModelSerializer):
