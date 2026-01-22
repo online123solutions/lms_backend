@@ -255,7 +255,7 @@ class UserExcelUploadSerializer(serializers.Serializer):
         if not value.name.endswith('.xlsx'):
             raise serializers.ValidationError("Only .xlsx files are allowed.")
         return value
-
+    
 
 class TraineeProfileUpdateSerializer(serializers.ModelSerializer):
     """Serializer for trainee to update their own profile"""

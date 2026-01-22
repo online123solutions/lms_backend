@@ -246,8 +246,8 @@ class UploadUsersExcelView(APIView):
                     role=role,
                     is_active=False
                 )
-                user.set_password(password)
-                user.save()
+                    user.set_password(password)
+                    user.save()
 
                 # Convert string fields to strings (Excel may read them as other types)
                 name = str(name) if name else ""
@@ -256,49 +256,49 @@ class UploadUsersExcelView(APIView):
                 designation = str(designation) if designation else ""
 
                 # Update or create profile (signal may have already created empty profile)
-                if role == 'trainee':
+                    if role == 'trainee':
                     TraineeProfile.objects.update_or_create(
-                        user=user,
+                            user=user,
                         defaults={
                             'name': name,
                             'employee_id': employee_id,
                             'department': department,
                             'designation': designation
                         }
-                    )
-                elif role == 'employee':
+                        )
+                    elif role == 'employee':
                     EmployeeProfile.objects.update_or_create(
-                        user=user,
+                            user=user,
                         defaults={
                             'name': name,
                             'employee_id': employee_id,
                             'department': department,
                             'designation': designation
                         }
-                    )
-                elif role == 'trainer':
+                        )
+                    elif role == 'trainer':
                     TrainerProfile.objects.update_or_create(
-                        user=user,
+                            user=user,
                         defaults={
                             'name': name,
                             'employee_id': employee_id,
                             'department': department,
                             'designation': designation
                         }
-                    )
-                elif role == 'admin':
+                        )
+                    elif role == 'admin':
                     AdminProfile.objects.update_or_create(
-                        user=user,
+                            user=user,
                         defaults={
                             'name': name,
                             'employee_id': employee_id,
                             'department': department,
                             'designation': designation
                         }
-                    )
+                        )
 
-                send_welcome_email.delay(email)
-                success_count += 1
+                    send_welcome_email.delay(email)
+                    success_count += 1
 
             except Exception as e:
                 error_count += 1
@@ -386,7 +386,7 @@ class PasswordResetConfirmView(APIView):
             return Response({"detail": "Invalid token or user ID."}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({"detail": "An unexpected error occurred."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+        
 
 class ChangePasswordView(APIView):
     """

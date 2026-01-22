@@ -13,7 +13,8 @@ from user.serializers import (
     TrainerSerializer,CourseSerializer, CourseLessonSerializer, MacroplannerSerializer, MicroplannerSerializer,AssessmentSerializer,AssessmentReportSerializer,
     EvaluationRemarkSerializer,TrainingReportSerializer,UserLoginActivitySerializer,QueryResponseSerializer,QuerySerializer,
     EmployeeSerializer,TrainerNotificationRequestSerializer,SentNotificationSerializer,ActiveUserSerializer,TrainerLessonProgressWriteSerializer,
-    InboxNotificationSerializer,TrainerLessonProgressReadSerializer,TaskAssignmentCreateSerializer,TaskAssignmentSerializer,LinkSubmissionSerializer
+    InboxNotificationSerializer,TrainerLessonProgressReadSerializer,TaskAssignmentCreateSerializer,TaskAssignmentSerializer,LinkSubmissionSerializer,
+    TraineeSerializer
 )
 from rest_framework.generics import ListCreateAPIView,RetrieveUpdateAPIView, ListAPIView
 from drf_yasg.utils import swagger_auto_schema
@@ -48,13 +49,21 @@ class TrainerDashboardView(APIView):
             return Response({"error": "Trainer profile not found."}, status=404)
 
         # Profile data
-        profile_data = TrainerSerializer(trainer_obj).data
+        profile_data = TrainerSerializer(trainer_obj, context={'request': request}).data
 
+        # Get all trainees whose department is "Training"
+        all_trainees = TraineeProfile.objects.filter(
+            department="Training"
+        ).select_related('user', 'trainer')
+        
+        # Count of all trainees with department "Training"
+        total_trainees = all_trainees.count()
+        
         # Count of trainees assigned to this trainer
-        trainee_qs = CustomUser.objects.filter(
-            trainee_profile__trainer=request.user
-        )
-        total_trainees = trainee_qs.count()
+        assigned_trainees_count = all_trainees.filter(trainer=request.user).count()
+
+        # Serialize all trainees
+        trainees_data = TraineeSerializer(all_trainees, many=True, context={'request': request}).data
 
         # Courses (we can later add filtering by department or trainer-assigned logic)
         courses = Courses.objects.filter(created_by=request.user)
@@ -68,6 +77,8 @@ class TrainerDashboardView(APIView):
         return Response({
             "profile": profile_data,
             "trainee_count": total_trainees,
+            "assigned_trainee_count": assigned_trainees_count,
+            "trainees": trainees_data,
             "course_count": course_count,
             "courses": list(courses.values("course_id", "course_name", "department", "is_approved")),
             "active_count": active_count,
