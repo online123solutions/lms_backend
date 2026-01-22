@@ -11,7 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
-from decouple import Config, RepositoryEnv
+from decouple import config, RepositoryEnv
 import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent

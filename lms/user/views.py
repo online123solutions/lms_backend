@@ -258,47 +258,47 @@ class UploadUsersExcelView(APIView):
                 # Update or create profile (signal may have already created empty profile)
                 if role == 'trainee':
                     TraineeProfile.objects.update_or_create(
-                        user=user,
+                            user=user,
                         defaults={
                             'name': name,
                             'employee_id': employee_id,
                             'department': department,
                             'designation': designation
                         }
-                    )
+                        )
                 elif role == 'employee':
                     EmployeeProfile.objects.update_or_create(
-                        user=user,
+                            user=user,
                         defaults={
                             'name': name,
                             'employee_id': employee_id,
                             'department': department,
                             'designation': designation
                         }
-                    )
+                        )
                 elif role == 'trainer':
                     TrainerProfile.objects.update_or_create(
-                        user=user,
+                            user=user,
                         defaults={
                             'name': name,
                             'employee_id': employee_id,
                             'department': department,
                             'designation': designation
                         }
-                    )
+                        )
                 elif role == 'admin':
                     AdminProfile.objects.update_or_create(
-                        user=user,
+                            user=user,
                         defaults={
                             'name': name,
                             'employee_id': employee_id,
                             'department': department,
                             'designation': designation
                         }
-                    )
+                        )
 
-                    send_welcome_email.delay(email)
-                    success_count += 1
+                send_welcome_email.delay(email)
+                success_count += 1
 
             except Exception as e:
                 error_count += 1
