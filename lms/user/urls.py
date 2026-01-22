@@ -7,7 +7,7 @@ from .TrainerView import (
     TrainerDashboardView, TrainerCourseView,TrainerCourseLessonView,MacroplannerViewSet, MicroplannerViewSet,AssessmentListCreateView,
     TrainerAssessmentReportView,AssessmentReportUpdateView,EvaluationRemarkView,TrainingReportView,LMSEngagementView,RecentActivityView,
     TrainerQueryListAPIView, TrainerQueryResponseAPIView, TrainerAssignTrainerAPIView,TrainerNotifyView,TrainerSOPListView,TrainerLibraryListView,
-    TrainerCourseProgressSummaryView,TrainerLessonProgressView,TrainerLessonProgressDetailView,TaskAssignmentViewSet
+    TrainerCourseProgressSummaryView,TrainerLessonProgressView,TrainerLessonProgressDetailView,TaskAssignmentViewSet,TraineeListAPIView
 )
 
 from .TraineeView import (
@@ -61,6 +61,7 @@ urlpatterns = [
 
     #Trainer Urls
     path('trainer/profile/', TrainerProfileUpdateView.as_view(), name='trainer-profile-update'),
+    path('trainer/trainees/', TraineeListAPIView.as_view(), name='trainee-list'),
     path('trainer/courses/', TrainerCourseView.as_view(), name='courses'), 
     path('trainer/course-lessons/', TrainerCourseLessonView.as_view(), name='course-lessons'),
     path('trainer/assessments/', AssessmentListCreateView.as_view(), name='trainer-assessments'),

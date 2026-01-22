@@ -86,6 +86,40 @@ class TrainerDashboardView(APIView):
         }, status=200)
 
 
+class TraineeListAPIView(APIView):
+    """
+    GET /trainer/trainees/
+    Returns all trainees with department "Training".
+    Available for trainers to view all trainees.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Get list of all trainees with department 'Training'. Available for trainers.",
+        responses={
+            200: "List of trainees",
+            403: "Forbidden - Only trainers can access this endpoint"
+        },
+    )
+    def get(self, request):
+        # Check if user is a trainer
+        if request.user.role != 'trainer':
+            return Response(
+                {"error": "Only trainers can access this endpoint."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Get all trainees with department "Training"
+        trainees = TraineeProfile.objects.filter(
+            department="Training"
+        ).select_related('user', 'trainer').order_by('user__username')
+
+        # Serialize trainees
+        serializer = TraineeSerializer(trainees, many=True, context={'request': request})
+        
+        return Response({"trainees": serializer.data}, status=status.HTTP_200_OK)
+
+
 class TrainerCourseView(ListCreateAPIView):
     serializer_class = CourseSerializer
     permission_classes = [IsAuthenticated]
