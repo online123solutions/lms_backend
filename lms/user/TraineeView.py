@@ -8,7 +8,7 @@ from .serializers import (
     ContentStartSerializer,MacroplannerSerializer,MicroplannerSerializer,UserLoginActivitySerializer,NotificationReceiptSerializer,
     ActiveQuizListSerializer,TraineeProgressSerializer,TraineeFeedbackSerializer,TraineeTaskSubmissionSerializer,TraineeTaskReviewSerializer,
     BannerSerializer,ConcernAssignSerializer,ConcernCreateSerializer,ConcernDetailSerializer,ConcernListSerializer,ConcernStatusSerializer,
-    ConcernCommentSerializer,ConcernCommentCreateSerializer
+    ConcernCommentSerializer,ConcernCommentCreateSerializer,ActiveUserSerializer
 )
 from .models import (
     Subject, Lesson,TraineeProfile, UserLoginActivity,Query,Macroplanner, Microplanner,CustomUser,AssessmentReport,NotificationReceipt,
@@ -36,11 +36,13 @@ from rest_framework.permissions import IsAuthenticated
 from .models import Subject, TraineeProfile, EmployeeProfile
 from .serializers import SubjectSerializer
 from .views import BaseSOPListView,BaseSLListView
+from .utils import get_active_users
 from rest_framework import viewsets,generics, permissions
 from rest_framework.decorators import action
 import logging
 from rest_framework.pagination import PageNumberPagination
 from django.utils import timezone
+from django.contrib.sessions.models import Session
 
 
 class SubjectListAPIView(APIView):
@@ -285,6 +287,22 @@ class TraineeDashboardView(APIView):
                 active_quizzes_qs, many=True, context={"request": request}
             ).data
             
+            # Get all active users without department filtering
+            active_sessions = Session.objects.filter(expire_date__gte=timezone.now())
+            user_ids = {
+                s.get_decoded().get('_auth_user_id')
+                for s in active_sessions
+                if '_auth_user_id' in s.get_decoded()
+            }
+            if user_ids:
+                active_users = CustomUser.objects.filter(
+                    id__in=user_ids
+                ).select_related("trainee_profile", "employee_profile").distinct()
+                active_users_data = ActiveUserSerializer(active_users, many=True).data
+                active_count = active_users.count()
+            else:
+                active_users_data = []
+                active_count = 0
 
             return Response({
                 "profile": profile_data,
@@ -303,7 +321,9 @@ class TraineeDashboardView(APIView):
                 "active_homework": active_homework.data,
                 "completed_lessons_count": completed_lessons_count,
                 "completed_lesson_ids": completed_lesson_ids,
-                "completed_per_subject": completed_per_subject_data
+                "completed_per_subject": completed_per_subject_data,
+                "active_count": active_count,
+                "active_users": active_users_data
             }, status=status.HTTP_200_OK)
 
         except Exception as e:
