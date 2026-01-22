@@ -3,7 +3,7 @@ from pathlib import Path
 
 ALLOWED_HOSTS = ['lms.steel.study', 'steel.study', '127.0.0.1', 'localhost','app.steel.study']
 
-DEBUG=False
+DEBUG=True
 
 # at the bottom is fine
 STATIC_URL = "static/"
