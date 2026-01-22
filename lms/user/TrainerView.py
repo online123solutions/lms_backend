@@ -66,7 +66,7 @@ class TrainerDashboardView(APIView):
         trainees_data = TraineeSerializer(all_trainees, many=True, context={'request': request}).data
 
         # Courses (we can later add filtering by department or trainer-assigned logic)
-        courses = Courses.objects.filter(created_by=request.user)
+        courses = Courses.objects.filter(department=department)
         course_count = courses.count()
 
         # Active users in the trainer's department
