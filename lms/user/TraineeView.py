@@ -141,6 +141,7 @@ class LessonDetailAPIView(APIView):
                 'quiz': lesson.quiz,
                 'content': lesson.content,
                 'editor': lesson.editor,
+                'lesson_pdfs': lesson.lesson_pdfs,
                 'display_on_frontend': lesson.display_on_frontend,
                 'mark_as_completed': lesson.mark_as_completed,
             }

@@ -7,14 +7,14 @@ from django.db.models.functions import TruncDate
 from user.models import (
     AdminProfile,TraineeProfile, CustomUser,Courses,CourseLesson,Microplanner,Macroplanner,Assessment,AssessmentReport,EvaluationRemark,TrainingReport,UserLoginActivity,QueryResponse,
     Query,EmployeeProfile,Notification,NotificationReceipt,TraineeLessonCompletion,EmployeeLessonCompletion,AdminProfile,TrainerProfile,
-    TrainerLessonProgress,TraineeFeedback
+    TrainerLessonProgress,TraineeFeedback,Subject,Lesson
 )
 from user.serializers import (
     TrainerSerializer,CourseSerializer, CourseLessonSerializer, MacroplannerSerializer, MicroplannerSerializer,AssessmentSerializer,AssessmentReportSerializer,
     EvaluationRemarkSerializer,TrainingReportSerializer,UserLoginActivitySerializer,QueryResponseSerializer,QuerySerializer,
     TrainerNotificationRequestSerializer,SentNotificationSerializer,ActiveUserSerializer,AdminSerializer,AdminTrainerSummaryRowSerializer,
     AdminTrainerLessonProgressSerializer,AdminCourseProgressRowSerializer,TraineeFeedbackSerializer,AdminNotificationRequestSerializer,
-    InboxNotificationSerializer
+    InboxNotificationSerializer,SubjectSerializer,LessonSerializer
 )
 from rest_framework.generics import ListCreateAPIView,RetrieveUpdateAPIView, ListAPIView
 from drf_yasg.utils import swagger_auto_schema
@@ -1701,3 +1701,110 @@ class AdminNotifyView(APIView):
             },
             status=200,
         )
+
+
+class AdminLessonListCreateView(ListCreateAPIView):
+    """Admin view to list and create lessons with multiple PDFs"""
+    serializer_class = LessonSerializer
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+    
+    def get_queryset(self):
+        return Lesson.objects.all().select_related('subject').order_by('position')
+    
+    def perform_create(self, serializer):
+        serializer.save()
+
+
+class AdminLessonDetailView(RetrieveUpdateAPIView):
+    """Admin view to retrieve, update, or delete a lesson"""
+    serializer_class = LessonSerializer
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+    lookup_field = 'id'
+    
+    def get_queryset(self):
+        return Lesson.objects.all().select_related('subject')
+
+
+class AdminLessonUploadPDFView(APIView):
+    """Admin view to upload multiple PDFs to a lesson"""
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+    
+    def post(self, request, lesson_id):
+        try:
+            lesson = get_object_or_404(Lesson, id=lesson_id)
+            pdf_files = request.FILES.getlist('pdf_files')
+            
+            if not pdf_files:
+                return Response({"error": "No PDF files provided"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Validate PDF files
+            from django.core.files.base import ContentFile
+            from django.core.validators import FileExtensionValidator
+            from django.core.exceptions import ValidationError
+            
+            pdf_paths = lesson.lesson_pdfs or []
+            
+            for pdf_file in pdf_files:
+                # Validate file extension
+                if not pdf_file.name.lower().endswith('.pdf'):
+                    return Response({"error": f"File {pdf_file.name} is not a PDF"}, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Validate file size (10MB max)
+                if pdf_file.size > 10 * 1024 * 1024:
+                    return Response({"error": f"File {pdf_file.name} is too large (max 10MB)"}, status=status.HTTP_400_BAD_REQUEST)
+                
+                # Save file and get path
+                from django.core.files.storage import default_storage
+                from django.utils import timezone
+                import os
+                
+                filename = f"lesson_pdfs/{timezone.now().strftime('%Y/%m')}/{lesson.lesson_id}_{pdf_file.name}"
+                path = default_storage.save(filename, pdf_file)
+                pdf_paths.append(path)
+            
+            # Update lesson with new PDF paths
+            lesson.lesson_pdfs = pdf_paths
+            lesson.save()
+            
+            return Response({
+                "message": f"Successfully uploaded {len(pdf_files)} PDF files",
+                "pdf_paths": pdf_paths
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+    def delete(self, request, lesson_id):
+        try:
+            lesson = get_object_or_404(Lesson, id=lesson_id)
+            pdf_path = request.data.get('pdf_path')
+            
+            if not pdf_path:
+                return Response({"error": "PDF path is required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            if pdf_path not in (lesson.lesson_pdfs or []):
+                return Response({"error": "PDF not found in this lesson"}, status=status.HTTP_404_NOT_FOUND)
+            
+            # Remove file from storage
+            from django.core.files.storage import default_storage
+            try:
+                default_storage.delete(pdf_path)
+            except Exception:
+                pass  # File might not exist
+            
+            # Remove path from lesson
+            pdf_paths = lesson.lesson_pdfs or []
+            pdf_paths.remove(pdf_path)
+            lesson.lesson_pdfs = pdf_paths
+            lesson.save()
+            
+            return Response({
+                "message": "PDF successfully removed",
+                "remaining_pdfs": pdf_paths
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

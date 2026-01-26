@@ -426,6 +426,7 @@ class Lesson(models.Model):
     quiz = models.URLField(verbose_name="Quiz", max_length=300, default="", null=True, blank=True)
     content = models.URLField(verbose_name="Learning Aids", max_length=300, default="", null=True, blank=True)
     editor = models.URLField(verbose_name="Editor", max_length=300, default="", null=True, blank=True)
+    lesson_pdfs = models.JSONField(default=list, blank=True, help_text="List of PDF file paths for this lesson")
     display_on_frontend = models.BooleanField(default=True, verbose_name="Display on Frontend")
     mark_as_completed=models.BooleanField(verbose_name="Mark as completed",default=False)
     is_new = models.BooleanField(default=False, help_text="Mark as new for employee dashboard visibility")

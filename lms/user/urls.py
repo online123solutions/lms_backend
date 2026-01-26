@@ -27,7 +27,7 @@ from .AdminView import (
     AdminDashboardView,AdminCourseView,AdminCourseLessonView,AdminLMSEngagementView,AdminRecentActivityView,AdminMacroplannerViewSet,
     AdminMicroplannerViewSet,AdminTrainingReportView,AdminAssessmentReportView,AdminNotifyView,AdminSOPListView,
     AdminTrainerCourseProgressView,AdminTrainerOverallSummaryView,AdminLibraryListView,AdminTrainerLessonProgressListView,
-    TraineeFeedbackAdminListView,AdminNotifyView
+    TraineeFeedbackAdminListView,AdminNotifyView,AdminLessonListCreateView,AdminLessonDetailView,AdminLessonUploadPDFView
 )
 from rest_framework.routers import DefaultRouter
 
@@ -129,6 +129,9 @@ urlpatterns = [
     # Admin Urls
     path('custom_admin/courses/', AdminCourseView.as_view(), name='courses'), 
     path('custom_admin/course-lessons/', AdminCourseLessonView.as_view(), name='course-lessons'),
+    path('custom_admin/lessons/', AdminLessonListCreateView.as_view(), name='admin-lessons'),
+    path('custom_admin/lessons/<int:id>/', AdminLessonDetailView.as_view(), name='admin-lesson-detail'),
+    path('custom_admin/lessons/<int:lesson_id>/upload-pdfs/', AdminLessonUploadPDFView.as_view(), name='admin-lesson-upload-pdfs'),
     path('custom_admin/lms-engagement/', AdminLMSEngagementView.as_view(), name='admin-lms-engagement'),
     path('custom_admin/recent_activity/', AdminRecentActivityView.as_view(), name='admin_recent_activity'),
     path('custom_admin/training-report/', AdminTrainingReportView.as_view({'get': 'list'}), name='admin-training-report'),

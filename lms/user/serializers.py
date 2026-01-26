@@ -587,9 +587,31 @@ class SubjectSerializer(serializers.ModelSerializer):
         fields="__all__"
 
 class LessonSerializer(serializers.ModelSerializer):
+    lesson_pdfs = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        allow_empty=True,
+        help_text="List of PDF file paths for this lesson"
+    )
+    lesson_pdfs_urls = serializers.SerializerMethodField()
+    
     class Meta:
         model=Lesson
         fields="__all__"
+    
+    def get_lesson_pdfs_urls(self, obj):
+        """Convert PDF file paths to absolute URLs"""
+        if not obj.lesson_pdfs:
+            return []
+        
+        request = self.context.get('request')
+        urls = []
+        for pdf_path in obj.lesson_pdfs:
+            if request:
+                urls.append(request.build_absolute_uri(f'/media/{pdf_path}'))
+            else:
+                urls.append(f'/media/{pdf_path}')
+        return urls
 
 class ContentStartSerializer(serializers.Serializer):
     content_viewed = serializers.CharField(max_length=255)  # Content identifier (e.g., lesson ID)
