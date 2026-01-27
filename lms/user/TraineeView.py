@@ -470,10 +470,13 @@ class TraineeMacroplannerListAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Fetch macroplanners for trainee's department
+        # Fetch macroplanners for trainee's department AND Development department
         qs = (
             Macroplanner.objects
-            .filter(department=trainee.department,role=request.user.role)
+            .filter(
+                Q(department=trainee.department) | Q(department='Development'),
+                role=request.user.role
+            )
             .order_by("-id")  # change to "-created_at" if you have that field
         )
 
@@ -497,10 +500,13 @@ class TraineeMicroplannerListAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Fetch microplanners for trainee's department
+        # Fetch microplanners for trainee's department AND Development department
         qs = (
             Microplanner.objects
-            .filter(department=trainee.department,role=request.user.role)
+            .filter(
+                Q(department=trainee.department) | Q(department='Development'),
+                role=request.user.role
+            )
             .order_by("-id")  # or "-created_at" if available
         )
 
