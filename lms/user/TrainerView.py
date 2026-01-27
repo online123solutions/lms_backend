@@ -884,21 +884,15 @@ class TrainingReportView(viewsets.ViewSet):
             ).distinct()
 
         elif user.role == 'trainer':
-            try:
-                trainee_user_ids = (
-                    TraineeProfile.objects
-                    .filter(trainer_id=user.id)
-                    .values_list('user_id', flat=True)
-                )
-                users = CustomUser.objects.filter(
-                    Q(id__in=trainee_user_ids) | Q(id=user.id, role='employee'),
-                    is_active=True
-                ).distinct()
-            except Exception as e:
-                return Response(
-                    {"error": f"Error fetching trainees: {str(e)}"},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
+            # Trainers can see all trainees + their own employee user (if any)
+            trainee_user_ids = (
+                TraineeProfile.objects
+                .values_list('user_id', flat=True)
+            )
+            users = CustomUser.objects.filter(
+                Q(id__in=trainee_user_ids) | Q(id=user.id, role='employee'),
+                is_active=True
+            ).distinct()
         else:
             return Response({"error": "Unauthorized access"}, status=status.HTTP_403_FORBIDDEN)
 
@@ -936,11 +930,10 @@ class TrainingReportView(viewsets.ViewSet):
             pass  # Admin can view anyone
         elif requester.role == 'trainer':
             if target_user.role == 'trainee':
-                # Only if this trainee is assigned to this trainer
-                if not TraineeProfile.objects.filter(user=target_user, trainer_id=requester.id).exists():
-                    return Response({"error": "Unauthorized access"}, status=status.HTTP_403_FORBIDDEN)
+                # Trainers can view all trainees (no assignment restriction)
+                pass  # Allow access to all trainees
             elif target_user.role == 'employee':
-                # Trainers can view only their own employee account (keep as-is; relax if desired)
+                # Trainers can view only their own employee account
                 if target_user.id != requester.id:
                     return Response({"error": "Unauthorized access"}, status=status.HTTP_403_FORBIDDEN)
             else:
