@@ -107,7 +107,11 @@ class LessonListAPIView(APIView):
             department = self._get_user_department(request.user)
             subject = get_object_or_404(Subject, slug=slug)
 
-            filtered_lessons = Lesson.objects.filter(department=department, subject=subject)
+            filtered_lessons = Lesson.objects.filter(
+                department=department, 
+                subject=subject, 
+                display_on_frontend=True
+            )
 
             if not filtered_lessons.exists():
                 return Response({'message': 'No lessons found for this subject in your department.'},
@@ -128,7 +132,7 @@ class LessonDetailAPIView(APIView):
 
     def get(self, request, slug):
         try:
-            lesson = get_object_or_404(Lesson, slug=slug)
+            lesson = get_object_or_404(Lesson, slug=slug, display_on_frontend=True)
 
             lesson_data = {
                 'id': lesson.id,
