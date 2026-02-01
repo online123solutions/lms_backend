@@ -113,6 +113,10 @@ Department=[
     ('Training', 'Training'),
     ('Development', 'Development'),
     ('Design', 'Design'),
+    ('AISC Steel Detailing', 'AISC Steel Detailing'),
+    ('Tekla', 'Tekla'),
+    ('Shop Editing', 'Shop Editing'),
+    ('Shop Editor Training', 'Shop Editor Training'),
 ]
 MONTH_CHOICES = [
     ('January', 'January'),
