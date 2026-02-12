@@ -741,7 +741,36 @@ class TraineeFeedbackCreateView(generics.CreateAPIView):
     def get(self, request, *args, **kwargs):
         """Return serializer with trainer options for form rendering"""
         serializer = self.get_serializer()
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        data = serializer.data
+        
+        # Manually add trainers list since SerializerMethodField might not work without instance
+        trainers = CustomUser.objects.filter(
+            role='trainer',
+            is_active=True
+        ).select_related('trainer_profile').order_by('username')
+
+        trainer_list = []
+        for trainer in trainers:
+            try:
+                trainer_profile = trainer.trainer_profile
+                trainer_list.append({
+                    'id': trainer.id,
+                    'username': trainer.username,
+                    'name': trainer_profile.name if trainer_profile.name else trainer.username,
+                    'employee_id': trainer_profile.employee_id if trainer_profile.employee_id else None,
+                    'department': trainer_profile.department if trainer_profile.department else None,
+                })
+            except TrainerProfile.DoesNotExist:
+                trainer_list.append({
+                    'id': trainer.id,
+                    'username': trainer.username,
+                    'name': trainer.username,
+                    'employee_id': None,
+                    'department': None,
+                })
+        
+        data['trainers'] = trainer_list
+        return Response(data, status=status.HTTP_200_OK)
 
     def perform_create(self, serializer):
         trainer_id = serializer.validated_data.get('trainer_id')

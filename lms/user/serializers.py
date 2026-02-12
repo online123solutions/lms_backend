@@ -1192,7 +1192,8 @@ class TraineeFeedbackSerializer(serializers.ModelSerializer):
             return obj.trainer.username
 
     def get_trainers(self, obj):
-        """Get all active trainers for dropdown selection"""
+        """Get all active trainers for dropdown selection (works with or without instance)"""
+        # This method works even when obj is None (during form rendering)
         trainers = CustomUser.objects.filter(
             role='trainer',
             is_active=True
