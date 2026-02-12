@@ -728,6 +728,7 @@ class TrainerLessonProgress(models.Model):
 
 class TraineeFeedback(models.Model):
     trainee = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="feedbacks")
+    trainer = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="received_feedbacks", limit_choices_to={'role': 'trainer'}, null=True, blank=True)
     communication = models.PositiveSmallIntegerField(default=0)
     subject_knowledge = models.PositiveSmallIntegerField(default=0)
     mentorship = models.PositiveSmallIntegerField(default=0)
@@ -735,6 +736,8 @@ class TraineeFeedback(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
+        if self.trainer:
+            return f"Feedback by {self.trainee.username} for {self.trainer.username} on {self.created_at.date()}"
         return f"Feedback by {self.trainee.username} on {self.created_at.date()}"
     
 class TraineeTaskSubmission(models.Model):

@@ -1159,6 +1159,10 @@ class InboxNotificationSerializer(serializers.ModelSerializer):
 class TraineeFeedbackSerializer(serializers.ModelSerializer):
     trainee_id = serializers.ReadOnlyField(source='trainee.id')
     trainee_username = serializers.ReadOnlyField(source='trainee.username')
+    trainer_id = serializers.IntegerField(write_only=True, required=True)
+    trainer_username = serializers.ReadOnlyField(source='trainer.username')
+    trainer_name = serializers.SerializerMethodField()
+    trainers = serializers.SerializerMethodField()  # List of all trainers for dropdown
 
     class Meta:
         model = TraineeFeedback
@@ -1166,12 +1170,63 @@ class TraineeFeedbackSerializer(serializers.ModelSerializer):
             'id',
             'trainee_id',
             'trainee_username',
+            'trainer_id',
+            'trainer_username',
+            'trainer_name',
+            'trainers',  # Added for dropdown options
             'communication',
             'subject_knowledge',
             'mentorship',
             'custom_feedback',
             'created_at'
         ]
+
+    def get_trainer_name(self, obj):
+        """Get trainer's name from TrainerProfile if available"""
+        if not obj.trainer:
+            return None
+        try:
+            trainer_profile = obj.trainer.trainer_profile
+            return trainer_profile.name if trainer_profile.name else obj.trainer.username
+        except:
+            return obj.trainer.username
+
+    def get_trainers(self, obj):
+        """Get all active trainers for dropdown selection"""
+        trainers = CustomUser.objects.filter(
+            role='trainer',
+            is_active=True
+        ).select_related('trainer_profile').order_by('username')
+
+        trainer_list = []
+        for trainer in trainers:
+            try:
+                trainer_profile = trainer.trainer_profile
+                trainer_list.append({
+                    'id': trainer.id,
+                    'username': trainer.username,
+                    'name': trainer_profile.name if trainer_profile.name else trainer.username,
+                    'employee_id': trainer_profile.employee_id if trainer_profile.employee_id else None,
+                    'department': trainer_profile.department if trainer_profile.department else None,
+                })
+            except TrainerProfile.DoesNotExist:
+                # If trainer profile doesn't exist, still include the trainer
+                trainer_list.append({
+                    'id': trainer.id,
+                    'username': trainer.username,
+                    'name': trainer.username,
+                    'employee_id': None,
+                    'department': None,
+                })
+        return trainer_list
+
+    def validate_trainer_id(self, value):
+        """Validate that the trainer_id belongs to a trainer"""
+        try:
+            trainer = CustomUser.objects.get(id=value, role='trainer')
+            return value
+        except CustomUser.DoesNotExist:
+            raise serializers.ValidationError("Invalid trainer ID. The user must be a trainer.")
 
 ADMIN_ROLE_CHOICES = ["trainer", "employee", "trainee"]
 

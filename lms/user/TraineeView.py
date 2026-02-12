@@ -11,7 +11,7 @@ from .serializers import (
     ConcernCommentSerializer,ConcernCommentCreateSerializer,ActiveUserSerializer
 )
 from .models import (
-    Subject, Lesson,TraineeProfile, UserLoginActivity,Query,Macroplanner, Microplanner,CustomUser,AssessmentReport,NotificationReceipt,
+    Subject, Lesson,TraineeProfile, TrainerProfile, UserLoginActivity,Query,Macroplanner, Microplanner,CustomUser,AssessmentReport,NotificationReceipt,
     TraineeLessonCompletion,TraineeTaskSubmission,Banner,Concern,ConcernComment
 )
 from rest_framework.permissions import IsAuthenticated
@@ -738,8 +738,15 @@ class TraineeFeedbackCreateView(generics.CreateAPIView):
     serializer_class = TraineeFeedbackSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get(self, request, *args, **kwargs):
+        """Return serializer with trainer options for form rendering"""
+        serializer = self.get_serializer()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
     def perform_create(self, serializer):
-        serializer.save(trainee=self.request.user)
+        trainer_id = serializer.validated_data.get('trainer_id')
+        trainer = get_object_or_404(CustomUser, id=trainer_id, role='trainer')
+        serializer.save(trainee=self.request.user, trainer=trainer)
 
 
 class TraineeTaskSubmissionViewSet(viewsets_ViewSet):
