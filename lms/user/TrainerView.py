@@ -120,9 +120,17 @@ class TraineeListAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # Get all trainees with the same department as the trainer
+        # Map trainer department to trainee department
+        # Trainers with "Development" department see trainees with "Training" department
+        # All other trainers see trainees from their same department
+        if trainer_department == "Development":
+            trainee_department = "Training"
+        else:
+            trainee_department = trainer_department
+
+        # Get all trainees with the mapped department
         trainees = TraineeProfile.objects.filter(
-            department=trainer_department
+            department=trainee_department
         ).select_related('user', 'trainer').order_by('user__username')
 
         # Serialize trainees
