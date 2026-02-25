@@ -89,16 +89,17 @@ class TrainerDashboardView(APIView):
 class TraineeListAPIView(APIView):
     """
     GET /trainer/trainees/
-    Returns all trainees with department "Training".
-    Available for trainers to view all trainees.
+    Returns trainees whose department matches the trainer's department.
+    Available for trainers to view their department's trainees.
     """
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
-        operation_description="Get list of all trainees with department 'Training'. Available for trainers.",
+        operation_description="Get list of trainees from the same department as the trainer.",
         responses={
             200: "List of trainees",
-            403: "Forbidden - Only trainers can access this endpoint"
+            403: "Forbidden - Only trainers can access this endpoint",
+            404: "Trainer profile not found"
         },
     )
     def get(self, request):
@@ -109,15 +110,29 @@ class TraineeListAPIView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Get all trainees with department "Training"
+        # Get trainer's department
+        try:
+            trainer_profile = TrainerProfile.objects.get(user=request.user)
+            trainer_department = trainer_profile.department
+        except TrainerProfile.DoesNotExist:
+            return Response(
+                {"error": "Trainer profile not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Get all trainees with the same department as the trainer
         trainees = TraineeProfile.objects.filter(
-            department="Training"
+            department=trainer_department
         ).select_related('user', 'trainer').order_by('user__username')
 
         # Serialize trainees
         serializer = TraineeSerializer(trainees, many=True, context={'request': request})
         
-        return Response({"trainees": serializer.data}, status=status.HTTP_200_OK)
+        return Response({
+            "trainees": serializer.data,
+            "trainer_department": trainer_department,
+            "count": trainees.count()
+        }, status=status.HTTP_200_OK)
 
 
 class TrainerCourseView(ListCreateAPIView):
