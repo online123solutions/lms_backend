@@ -239,15 +239,14 @@ class UploadUsersExcelView(APIView):
                     error_count += 1
                     continue
 
-                # Create new user
-                user = CustomUser.objects.create(
+                # Create new user with properly hashed password
+                user = CustomUser.objects.create_user(
                     username=username,
                     email=email,
+                    password=password,
                     role=role,
                     is_active=False
                 )
-                user.set_password(password)
-                user.save()
 
                 # Convert string fields to strings (Excel may read them as other types)
                 name = str(name) if name else ""
