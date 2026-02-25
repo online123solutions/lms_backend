@@ -229,6 +229,8 @@ class UploadUsersExcelView(APIView):
 
                 # Convert password to string (Excel may read numbers as integers)
                 password = str(password)
+                
+                print(f"DEBUG: Processing user {username} with password: {password}")
 
                 # Check if user exists by email or username (both are unique)
                 user = CustomUser.objects.filter(Q(email=email) | Q(username=username)).first()
@@ -247,6 +249,8 @@ class UploadUsersExcelView(APIView):
                     role=role,
                     is_active=False
                 )
+                
+                print(f"DEBUG: Created user {username}, password hash starts with: {user.password[:20]}")
 
                 # Convert string fields to strings (Excel may read them as other types)
                 name = str(name) if name else ""
