@@ -307,6 +307,62 @@ class UploadUsersExcelView(APIView):
             "message": f"{success_count} user(s) registered successfully.",
             "errors": errors
         }, status=status.HTTP_200_OK)
+
+
+class BulkPasswordResetView(APIView):
+    parser_classes = (MultiPartParser, FormParser)
+
+    @swagger_auto_schema(
+        request_body=UserExcelUploadSerializer,  
+        responses={200: "Passwords updated successfully", 400: "Bad Request"},
+    )
+    def post(self, request):
+        if 'excel_file' not in request.FILES:
+            return Response({"error": "Excel file is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        excel_file = request.FILES['excel_file']
+        if not excel_file.name.endswith('.xlsx'):
+            return Response({"error": "Invalid file type. Upload a .xlsx file."}, status=status.HTTP_400_BAD_REQUEST)
+
+        file_path = default_storage.save('temp/' + excel_file.name, excel_file)
+        wb = openpyxl.load_workbook(default_storage.open(file_path))
+        sheet = wb.active
+
+        updated_count = 0
+        not_found_count = 0
+        errors = []
+
+        for index, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+            try:
+                # Column order: role, username, email, password, name, employee_id, department, designation
+                role, username, email, password, name, employee_id, department, designation = row
+
+                if not username or not password:
+                    continue
+
+                # Convert password to string
+                password = str(password)
+
+                # Find user by username
+                try:
+                    user = CustomUser.objects.get(username=username)
+                    # Set the password properly (this will hash it)
+                    user.set_password(password)
+                    user.save()
+                    updated_count += 1
+                except CustomUser.DoesNotExist:
+                    not_found_count += 1
+                    errors.append(f"Row {index}: User not found - {username}")
+
+            except Exception as e:
+                errors.append(f"Row {index}: {str(e)}")
+
+        return Response({
+            "message": f"{updated_count} password(s) updated successfully.",
+            "not_found": not_found_count,
+            "errors": errors
+        }, status=status.HTTP_200_OK)
+
     
 @swagger_auto_schema(
     method='post',

@@ -1,6 +1,6 @@
 from django.urls import path,include
 from .views import (
-    RegistrationView,LoginView,UserLogoutView,DownloadUserTemplate,UploadUsersExcelView,mark_notification_read,PasswordResetRequestView,
+    RegistrationView,LoginView,UserLogoutView,DownloadUserTemplate,UploadUsersExcelView,BulkPasswordResetView,mark_notification_read,PasswordResetRequestView,
     PasswordResetConfirmView, TraineeProfileUpdateView, TrainerProfileUpdateView, ChangePasswordView
 )
 from .TrainerView import (
@@ -53,6 +53,7 @@ urlpatterns = [
     path('account/login/', LoginView.as_view(), name='login'), 
     path('account/logout/', UserLogoutView.as_view(), name='logout'),
     path('account/upload/', UploadUsersExcelView.as_view(), name='upload_students_excel'),
+    path('account/bulk-password-reset/', BulkPasswordResetView.as_view(), name='bulk_password_reset'),
     path('account/template/', DownloadUserTemplate.as_view(), name='download_students_template'),
     path('account/password-reset/', PasswordResetRequestView.as_view(), name='password_reset_request'),
     path('account/password-reset-confirm/<uidb64>/<token>/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
