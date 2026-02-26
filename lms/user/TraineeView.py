@@ -635,10 +635,10 @@ class TraineeProgressViewSet(viewsets.ViewSet):
         if not profile:
             return {"error": "Trainee profile not found"}
 
-        # ---- all lessons grouped by subject ----
-        # Adjust Lesson import / filters to your app (e.g., .filter(is_active=True))
+        # ---- all lessons grouped by subject (filtered by trainee's department) ----
         lessons_by_subject = (
             Lesson.objects
+            .filter(department=profile.department)
             .values('subject_id', 'subject__name')
             .annotate(total=Count('id'))
         )
