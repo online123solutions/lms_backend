@@ -483,7 +483,7 @@ class TraineeMacroplannerListAPIView(APIView):
         qs = (
             Macroplanner.objects
             .filter(
-                Q(department=trainee.department) | Q(department='Development'),
+                Q(department=trainee.department),
                 role=request.user.role
             )
             .order_by("-id")  # change to "-created_at" if you have that field
