@@ -854,27 +854,48 @@ class TrainerNotifyView(APIView):
 class TrainingReportView(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
 
-    # ---- helper to build a detailed report for trainee/employee ----
+    # 🔥 Department Mapping
+    DEPARTMENT_ACCESS_MAP = {
+        "Development": "Training",
+        "Shop Editing": "Shop Editor Training",
+    }
+
+    # -------------------------------------------------------
+    # Helper: Build detailed report for trainee/employee
+    # -------------------------------------------------------
     def _build_detailed_report(self, target_user):
         profile = None
         completions = []
 
         if target_user.role == 'trainee':
-            profile = (TraineeProfile.objects
-                    .select_related('trainer', 'user')
-                    .filter(user=target_user).first())
+            profile = (
+                TraineeProfile.objects
+                .select_related('trainer', 'user')
+                .filter(user=target_user)
+                .first()
+            )
+
             if profile:
-                completions = (TraineeLessonCompletion.objects
-                            .filter(trainee=profile)
-                            .select_related('lesson'))
+                completions = (
+                    TraineeLessonCompletion.objects
+                    .filter(trainee=profile)
+                    .select_related('lesson')
+                )
+
         elif target_user.role == 'employee':
-            profile = (EmployeeProfile.objects
-                    .select_related('user')
-                    .filter(user=target_user).first())
+            profile = (
+                EmployeeProfile.objects
+                .select_related('user')
+                .filter(user=target_user)
+                .first()
+            )
+
             if profile:
-                completions = (EmployeeLessonCompletion.objects
-                            .filter(employee=profile)
-                            .select_related('lesson'))
+                completions = (
+                    EmployeeLessonCompletion.objects
+                    .filter(employee=profile)
+                    .select_related('lesson')
+                )
 
         name = getattr(profile, 'name', 'N/A') if profile else 'N/A'
         trainer_name = getattr(getattr(profile, 'trainer', None), 'name', 'N/A')
@@ -888,83 +909,139 @@ class TrainingReportView(viewsets.ViewSet):
             'department': getattr(profile, 'department', 'N/A') if profile else 'N/A',
             'designation': getattr(profile, 'designation', 'N/A') if profile else 'N/A',
             'trainer_name': trainer_name,
-            # CRUCIAL: pass model instances, not dicts
             'completed_lessons': list(completions),
         }
 
-
+    # -------------------------------------------------------
+    # LIST VIEW
+    # -------------------------------------------------------
     def list(self, request):
-        """List reports visible to the requester.
-        - admin: all trainees + employees
-        - trainer: assigned trainees + their own employee user (if any)
-        """
         user = request.user
 
+        # ---------------- ADMIN ----------------
         if user.role == 'admin':
             users = CustomUser.objects.filter(
                 Q(role='trainee') | Q(role='employee'),
                 is_active=True
             ).distinct()
 
+        # ---------------- TRAINER ----------------
         elif user.role == 'trainer':
-            # Trainers can see all trainees + their own employee user (if any)
+
+            trainer_profile = EmployeeProfile.objects.filter(user=user).first()
+            if not trainer_profile:
+                return Response(
+                    {"error": "Trainer profile not found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            trainer_department = trainer_profile.department
+            allowed_trainee_department = self.DEPARTMENT_ACCESS_MAP.get(trainer_department)
+
+            if not allowed_trainee_department:
+                return Response(
+                    {"error": "No department access configured"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Only trainees of mapped department
             trainee_user_ids = (
                 TraineeProfile.objects
+                .filter(department=allowed_trainee_department)
                 .values_list('user_id', flat=True)
             )
+
             users = CustomUser.objects.filter(
-                Q(id__in=trainee_user_ids) | Q(id=user.id, role='employee'),
+                Q(id__in=trainee_user_ids) |
+                Q(id=user.id, role='employee'),
                 is_active=True
             ).distinct()
-        else:
-            return Response({"error": "Unauthorized access"}, status=status.HTTP_403_FORBIDDEN)
 
+        else:
+            return Response(
+                {"error": "Unauthorized access"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Build response
         report_data = []
         for u in users:
-            # detailed only for trainee/employee; (trainers won't appear in list anyway)
             if u.role in ('trainee', 'employee'):
                 report_data.append(self._build_detailed_report(u))
-            else:
-                report_data.append({
-                    'user_id': u.id,
-                    'username': u.username,
-                    'role': u.role,
-                    'name': getattr(u, 'get_full_name', lambda: None)() or u.username,
-                    'employee_id': 'N/A',
-                    'department': 'N/A',
-                    'designation': 'N/A',
-                    'trainer_name': 'N/A',
-                    'completed_lessons': [],
-                })
 
         serializer = TrainingReportSerializer(report_data, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    # -------------------------------------------------------
+    # RETRIEVE VIEW
+    # -------------------------------------------------------
     def retrieve(self, request, pk=None):
-        """Detailed report for a specific user (trainee/employee)."""
         requester = request.user
+
         try:
             target_user = CustomUser.objects.get(id=pk)
         except CustomUser.DoesNotExist:
-            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "User not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-        # ---- authorization ----
+        # ---------------- ADMIN ----------------
         if requester.role == 'admin':
-            pass  # Admin can view anyone
-        elif requester.role == 'trainer':
-            if target_user.role == 'trainee':
-                # Trainers can view all trainees (no assignment restriction)
-                pass  # Allow access to all trainees
-            elif target_user.role == 'employee':
-                # Trainers can view only their own employee account
-                if target_user.id != requester.id:
-                    return Response({"error": "Unauthorized access"}, status=status.HTTP_403_FORBIDDEN)
-            else:
-                return Response({"error": "Unauthorized access"}, status=status.HTTP_403_FORBIDDEN)
-        else:
-            return Response({"error": "Unauthorized access"}, status=status.HTTP_403_FORBIDDEN)
+            pass
 
-        # ---- build detailed report (works for trainee & employee) ----
+        # ---------------- TRAINER ----------------
+        elif requester.role == 'trainer':
+
+            trainer_profile = EmployeeProfile.objects.filter(user=requester).first()
+            if not trainer_profile:
+                return Response(
+                    {"error": "Trainer profile not found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            trainer_department = trainer_profile.department
+            allowed_trainee_department = self.DEPARTMENT_ACCESS_MAP.get(trainer_department)
+
+            if not allowed_trainee_department:
+                return Response(
+                    {"error": "No department access configured"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            if target_user.role == 'trainee':
+                trainee_profile = TraineeProfile.objects.filter(user=target_user).first()
+
+                if (
+                    not trainee_profile or
+                    trainee_profile.department != allowed_trainee_department
+                ):
+                    return Response(
+                        {"error": "Unauthorized access"},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+
+            elif target_user.role == 'employee':
+                # Trainer can only view their own employee account
+                if target_user.id != requester.id:
+                    return Response(
+                        {"error": "Unauthorized access"},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+
+            else:
+                return Response(
+                    {"error": "Unauthorized access"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        else:
+            return Response(
+                {"error": "Unauthorized access"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Build detailed report
         data = self._build_detailed_report(target_user)
         serializer = TrainingReportSerializer(data)
         return Response(serializer.data, status=status.HTTP_200_OK)
