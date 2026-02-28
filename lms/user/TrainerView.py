@@ -125,6 +125,8 @@ class TraineeListAPIView(APIView):
         # All other trainers see trainees from their same department
         if trainer_department == "Development":
             trainee_department = "Training"
+        elif trainer_department == "Shop Editing":
+            trainee_department = "Shop Editor Training"
         else:
             trainee_department = trainer_department
 
