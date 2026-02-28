@@ -50,11 +50,24 @@ class TrainerDashboardView(APIView):
 
         # Profile data
         profile_data = TrainerSerializer(trainer_obj, context={'request': request}).data
+        DEPARTMENT_ACCESS_MAP = {
+            "Development": "Training",
+            "Shop Editing": "Shop Editor Training",
+        }
 
-        # Get all trainees whose department is "Training"
-        all_trainees = TraineeProfile.objects.filter(
-            department="Training"
-        ).select_related('user', 'trainer')
+
+        # Get mapped trainee department
+        allowed_trainee_department = DEPARTMENT_ACCESS_MAP.get(trainer_department)
+
+        if not allowed_trainee_department:
+            return Response({"error": "No department access configured"}, status=403)
+
+        # Filter trainees dynamically
+        all_trainees = (
+            TraineeProfile.objects
+            .filter(department=allowed_trainee_department)
+            .select_related('user', 'trainer')
+        )
         
         # Count of all trainees with department "Training"
         total_trainees = all_trainees.count()
