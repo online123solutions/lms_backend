@@ -513,7 +513,7 @@ class TraineeMicroplannerListAPIView(APIView):
         qs = (
             Microplanner.objects
             .filter(
-                Q(department=trainee.department) | Q(department='Development'),
+                Q(department=trainee.department),
                 role=request.user.role
             )
             .order_by("-id")  # or "-created_at" if available
