@@ -465,28 +465,55 @@ class ContentEndView(APIView):
 class TraineeMacroplannerListAPIView(APIView):
     """
     GET /trainee/macroplanners/
-    Returns macroplanners scoped to the authenticated trainee's department.
+    Returns macroplanners scoped to the authenticated trainee's department
+    with controlled cross-department visibility.
     """
     permission_classes = [IsAuthenticated]
 
+    # 🔥 Department visibility mapping
+    TRAINEE_DEPARTMENT_ACCESS_MAP = {
+        "Training": ["Training", "Development"],
+        "Shop Editor Training": ["Shop Editor Training", "Shop Editing"],
+    }
+
     def get(self, request):
-        # Ensure the requester has a TraineeProfile
+
+        # Ensure only trainees access this
+        if request.user.role != "trainee":
+            return Response(
+                {"detail": "Only trainees can access this endpoint."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Get trainee profile
         try:
-            trainee = TraineeProfile.objects.select_related("user").get(user=request.user)
+            trainee = (
+                TraineeProfile.objects
+                .select_related("user")
+                .get(user=request.user)
+            )
         except TraineeProfile.DoesNotExist:
             return Response(
                 {"detail": "Trainee profile not found for this user."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Fetch macroplanners for trainee's department AND Development department
+        trainee_department = trainee.department
+
+        # Get allowed departments
+        allowed_departments = self.TRAINEE_DEPARTMENT_ACCESS_MAP.get(
+            trainee_department,
+            [trainee_department]  # fallback: only own department
+        )
+
+        # Fetch macroplanners
         qs = (
             Macroplanner.objects
             .filter(
-                Q(department=trainee.department),
+                department__in=allowed_departments,
                 role=request.user.role
             )
-            .order_by("-id")  # change to "-created_at" if you have that field
+            .order_by("-id")
         )
 
         serializer = MacroplannerSerializer(qs, many=True)
