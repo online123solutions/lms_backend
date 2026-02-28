@@ -57,7 +57,7 @@ class TrainerDashboardView(APIView):
 
 
         # Get mapped trainee department
-        allowed_trainee_department = DEPARTMENT_ACCESS_MAP.get(trainer_department)
+        allowed_trainee_department = DEPARTMENT_ACCESS_MAP.get(department)
 
         if not allowed_trainee_department:
             return Response({"error": "No department access configured"}, status=403)
