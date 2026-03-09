@@ -886,7 +886,14 @@ class TraineeTaskSubmissionViewSet(viewsets_ViewSet):
             tp = self._trainer_profile(user)
             q = Q()
             if tp and getattr(tp, "department", None):
-                q &= Q(department__iexact=str(tp.department))
+                # Map trainer department to trainee department
+                department_mapping = {
+                    "Development": "Training",
+                    "Shop Editing": "Shop Editor Training"
+                }
+                trainer_dept = str(tp.department)
+                mapped_dept = department_mapping.get(trainer_dept, trainer_dept)
+                q &= Q(department__iexact=mapped_dept)
             qs = self._apply_admin_trainer_filters(self._base_qs().filter(q)).order_by("-submitted_at")
 
         elif role == "trainee":
