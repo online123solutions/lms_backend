@@ -867,6 +867,53 @@ class TaskAssignment(models.Model):
             self.STATUS_REVIEWED, self.STATUS_COMPLETED, self.STATUS_CANCELLED
         ))
 
+    def _normalize_department(self, dept_str):
+        """
+        Normalize department name variations to standard department names.
+        Maps all variations to: Training, Shop Editor Training, Development, Shop Editing
+        """
+        if not dept_str:
+            return dept_str
+        
+        dept_lower = dept_str.lower().strip()
+        
+        # Map variations to "Training"
+        training_variations = [
+            'training', 'trainee', 'shop online training', 'shop editor training'
+        ]
+        for var in training_variations:
+            if var in dept_lower:
+                return "Training"
+        
+        # Map variations to "Shop Editor Training" 
+        shop_editor_variations = [
+            'shop editor', 'shop detailing', 'editor'
+        ]
+        for var in shop_editor_variations:
+            if var in dept_lower:
+                return "Shop Editor Training"
+        
+        # Map variations to "Development"
+        dev_variations = ['development', 'dev']
+        for var in dev_variations:
+            if var in dept_lower:
+                return "Development"
+        
+        # Map variations to "Shop Editing"
+        shop_editing_variations = ['shop editing', 'editing']
+        for var in shop_editing_variations:
+            if var in dept_lower:
+                return "Shop Editing"
+        
+        # Return original if no match
+        return dept_str
+
+    def save(self, *args, **kwargs):
+        # Normalize department before saving
+        if self.department:
+            self.department = self._normalize_department(self.department)
+        super().save(*args, **kwargs)
+
     def bump_status_from_submission(self):
         """
         Keep assignment status in sync with linked submission.
