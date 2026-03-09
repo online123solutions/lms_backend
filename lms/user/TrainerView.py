@@ -1205,7 +1205,14 @@ class TaskAssignmentViewSet(viewsets.ViewSet):
             tp = self._trainer_profile(user)
             q = Q()
             if tp and getattr(tp, "department", None):
-                q &= Q(department__iexact=str(tp.department))
+                # Map trainer department to trainee department
+                department_mapping = {
+                    "Development": "Training",
+                    "Shop Editing": "Shop Editor Training"
+                }
+                trainer_dept = str(tp.department)
+                mapped_dept = department_mapping.get(trainer_dept, trainer_dept)
+                q &= Q(department__iexact=mapped_dept)
             qs = self._apply_filters(self._base_qs().filter(q)).order_by("-created_at")
 
         elif role in ("trainee", "employee"):
@@ -1243,7 +1250,17 @@ class TaskAssignmentViewSet(viewsets.ViewSet):
         elif role == "trainer":
             tp = self._trainer_profile(user)
             dept = getattr(tp, "department", None) if tp else None
-            if not (dept and obj.department and str(dept).lower() == str(obj.department).lower()):
+            if dept and obj.department:
+                # Map trainer department to trainee department
+                department_mapping = {
+                    "Development": "Training",
+                    "Shop Editing": "Shop Editor Training"
+                }
+                trainer_dept = str(dept)
+                mapped_dept = department_mapping.get(trainer_dept, trainer_dept)
+                if str(obj.department).lower() != mapped_dept.lower():
+                    return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+            else:
                 return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
         elif role in ("trainee", "employee"):
             if obj.assigned_to_id != user.id:
@@ -1256,13 +1273,31 @@ class TaskAssignmentViewSet(viewsets.ViewSet):
     # ---- partial update (trainer/admin) ----
     def partial_update(self, request, pk=None):
         user = request.user
-        if not (user.is_staff or getattr(user, "is_superuser", False) or getattr(user, "role", None) == "trainer"):
+        role = getattr(user, "role", None)
+        if not (user.is_staff or getattr(user, "is_superuser", False) or role == "trainer"):
             return Response({"error": "Only trainers or admins can update tasks."}, status=status.HTTP_403_FORBIDDEN)
 
         try:
             obj = TaskAssignment.objects.get(pk=pk)
         except TaskAssignment.DoesNotExist:
             return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Check department authorization for trainers
+        if role == "trainer" and not (user.is_staff or getattr(user, "is_superuser", False)):
+            tp = self._trainer_profile(user)
+            dept = getattr(tp, "department", None) if tp else None
+            if dept and obj.department:
+                # Map trainer department to trainee department
+                department_mapping = {
+                    "Development": "Training",
+                    "Shop Editing": "Shop Editor Training"
+                }
+                trainer_dept = str(dept)
+                mapped_dept = department_mapping.get(trainer_dept, trainer_dept)
+                if str(obj.department).lower() != mapped_dept.lower():
+                    return Response({"error": "Unauthorized - task not in your department"}, status=status.HTTP_403_FORBIDDEN)
+            else:
+                return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
 
         # Allow editing common fields; status may be controlled via actions
         allowed = {"title", "instructions", "department", "priority", "assigned_to", "due_at", "attachment", "max_marks", "requires_submission", "status"}
@@ -1316,13 +1351,31 @@ class TaskAssignmentViewSet(viewsets.ViewSet):
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
         user = request.user
-        if not (user.is_staff or getattr(user, "is_superuser", False) or getattr(user, "role", None) == "trainer"):
+        role = getattr(user, "role", None)
+        if not (user.is_staff or getattr(user, "is_superuser", False) or role == "trainer"):
             return Response({"error": "Only trainers or admins can complete tasks."}, status=status.HTTP_403_FORBIDDEN)
 
         try:
             obj = TaskAssignment.objects.get(pk=pk)
         except TaskAssignment.DoesNotExist:
             return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Check department authorization for trainers
+        if role == "trainer" and not (user.is_staff or getattr(user, "is_superuser", False)):
+            tp = self._trainer_profile(user)
+            dept = getattr(tp, "department", None) if tp else None
+            if dept and obj.department:
+                # Map trainer department to trainee department
+                department_mapping = {
+                    "Development": "Training",
+                    "Shop Editing": "Shop Editor Training"
+                }
+                trainer_dept = str(dept)
+                mapped_dept = department_mapping.get(trainer_dept, trainer_dept)
+                if str(obj.department).lower() != mapped_dept.lower():
+                    return Response({"error": "Unauthorized - task not in your department"}, status=status.HTTP_403_FORBIDDEN)
+            else:
+                return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
 
         obj.status = TaskAssignment.STATUS_COMPLETED
         obj.save(update_fields=["status", "updated_at"])
@@ -1332,13 +1385,31 @@ class TaskAssignmentViewSet(viewsets.ViewSet):
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
         user = request.user
-        if not (user.is_staff or getattr(user, "is_superuser", False) or getattr(user, "role", None) == "trainer"):
+        role = getattr(user, "role", None)
+        if not (user.is_staff or getattr(user, "is_superuser", False) or role == "trainer"):
             return Response({"error": "Only trainers or admins can cancel tasks."}, status=status.HTTP_403_FORBIDDEN)
 
         try:
             obj = TaskAssignment.objects.get(pk=pk)
         except TaskAssignment.DoesNotExist:
             return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Check department authorization for trainers
+        if role == "trainer" and not (user.is_staff or getattr(user, "is_superuser", False)):
+            tp = self._trainer_profile(user)
+            dept = getattr(tp, "department", None) if tp else None
+            if dept and obj.department:
+                # Map trainer department to trainee department
+                department_mapping = {
+                    "Development": "Training",
+                    "Shop Editing": "Shop Editor Training"
+                }
+                trainer_dept = str(dept)
+                mapped_dept = department_mapping.get(trainer_dept, trainer_dept)
+                if str(obj.department).lower() != mapped_dept.lower():
+                    return Response({"error": "Unauthorized - task not in your department"}, status=status.HTTP_403_FORBIDDEN)
+            else:
+                return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
 
         obj.status = TaskAssignment.STATUS_CANCELLED
         obj.save(update_fields=["status", "updated_at"])
