@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from lms.user.models import TaskAssignment
+from user.models import TaskAssignment
 
 
 class Command(BaseCommand):
