@@ -1,10 +1,49 @@
 from django.contrib import admin
+from django import forms
 from .models import (
     CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile,Courses, CourseLesson,Macroplanner,Microplanner,Subject,Lesson,Query,QueryResponse,
     UserLoginActivity,AssessmentReport,Notification,NotificationReceipt,EmployeeLessonCompletion,TraineeLessonCompletion,AdminProfile,SOP,
-    StandardLibraryItem,TrainerLessonProgress,TraineeFeedback,TraineeTaskSubmission,Banner,TaskAssignment,Concern,ConcernComment
+    StandardLibraryItem,TrainerLessonProgress,TraineeFeedback,TraineeTaskSubmission,Banner,TaskAssignment,Concern,ConcernComment,
+    Department,
     )
 from django_admin_listfilter_dropdown.filters import DropdownFilter
+
+
+class DepartmentListFilter(admin.SimpleListFilter):
+    title = 'department'
+    parameter_name = 'department'
+
+    def lookups(self, request, model_admin):
+        return Department
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(department__contains=[self.value()])
+        return queryset
+
+
+class SubjectAdminForm(forms.ModelForm):
+    department = forms.MultipleChoiceField(
+        choices=Department,
+        widget=forms.CheckboxSelectMultiple,
+        required=False,
+    )
+
+    class Meta:
+        model = Subject
+        fields = '__all__'
+
+
+class LessonAdminForm(forms.ModelForm):
+    department = forms.MultipleChoiceField(
+        choices=Department,
+        widget=forms.CheckboxSelectMultiple,
+        required=False,
+    )
+
+    class Meta:
+        model = Lesson
+        fields = '__all__'
 
 # Register your models here.
 @admin.register(CustomUser)
@@ -57,14 +96,28 @@ class MacroplannerAdmin(admin.ModelAdmin):
 
 @admin.register(Subject)
 class SubjectAdmin(admin.ModelAdmin):
-    list_display=('name','department')
-    list_filter=('department',)
+    form = SubjectAdminForm
+    list_display = ('name', 'display_departments')
+    list_filter = (DepartmentListFilter,)
+
+    def display_departments(self, obj):
+        if isinstance(obj.department, list):
+            return ', '.join(obj.department) if obj.department else '-'
+        return obj.department or '-'
+    display_departments.short_description = 'Departments'
 
 
 @admin.register(Lesson)
 class LessonAdmin(admin.ModelAdmin):
-    list_display=('name','subject','department')
-    list_filter=('department','subject')
+    form = LessonAdminForm
+    list_display = ('name', 'subject', 'display_departments')
+    list_filter = (DepartmentListFilter, 'subject')
+
+    def display_departments(self, obj):
+        if isinstance(obj.department, list):
+            return ', '.join(obj.department) if obj.department else '-'
+        return obj.department or '-'
+    display_departments.short_description = 'Departments'
 
 admin.site.register(Query)
 admin.site.register(QueryResponse)

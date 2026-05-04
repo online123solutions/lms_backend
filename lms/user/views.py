@@ -102,7 +102,10 @@ class RegistrationView(APIView):
                 if serializer.is_valid():
                     user_profile = serializer.save()
                     logger.info(f"Profile saved for user {username}: {user_profile}")
-                    send_welcome_email.delay(user_info.get('email'))
+                    # try:
+                    #     send_welcome_email.delay(user_info.get('email'))
+                    # except Exception as email_err:
+                    #     logger.warning(f"Welcome email not sent (Redis unavailable?): {email_err}")
                     status_code = status.HTTP_201_CREATED if not user else status.HTTP_200_OK
                     return Response(
                         {"message": f"Registration successful for {role}. Awaiting approval."},
@@ -300,7 +303,10 @@ class UploadUsersExcelView(APIView):
                         }
                         )
 
-                send_welcome_email.delay(email)
+                try:
+                    send_welcome_email.delay(email)
+                except Exception as email_err:
+                    logger.warning(f"Welcome email not sent (Redis unavailable?): {email_err}")
                 success_count += 1
 
             except Exception as e:
@@ -416,7 +422,11 @@ class PasswordResetRequestView(APIView):
                 email = serializer.validated_data.get('email')
                 if not email:
                     return Response({"error": "Validation failed to provide an email."}, status=status.HTTP_400_BAD_REQUEST)
-                send_password_reset_email.delay(email)
+                try:
+                    send_password_reset_email.delay(email)
+                except Exception as email_err:
+                    logger.warning(f"Password reset email not queued (Redis unavailable?): {email_err}")
+                    return Response({"error": "Email service unavailable. Please try again later."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
                 return Response({'success': 'Password reset email is being sent'}, status=status.HTTP_200_OK)
             else:
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

@@ -130,7 +130,7 @@ class EmployeeDashboardView(APIView):
 
             # Subjects (filtered for frontend, department)
             subjects_qs = Subject.objects.filter(
-                department=department,
+                department__contains=[department],
                 display_on_frontend=True
             ).order_by("name")
             subjects_count = subjects_qs.count()
@@ -142,7 +142,7 @@ class EmployeeDashboardView(APIView):
 
             # New lessons (across all subjects in department, based on is_new)
             new_lessons_qs = Lesson.objects.filter(
-                department=department,
+                department__contains=[department],
                 display_on_frontend=True,
                 is_new=True
             ).order_by("subject__name", "position")
@@ -533,7 +533,7 @@ class MarkLessonCompletedAPIView(APIView):
 
             # Check department compatibility (optional, adjust based on your models)
             if hasattr(lesson, 'department') and hasattr(profile, 'department'):
-                if lesson.department != profile.department:
+                if lesson.department and profile.department not in lesson.department:
                     return Response({"error": "Lesson not available for your department."}, status=status.HTTP_403_FORBIDDEN)
 
             # Check if the lesson is already completed
@@ -595,7 +595,7 @@ class EmployeeProgressViewSet(viewsets.ViewSet):
         # optional dept narrowing
         emp_dept = getattr(employee_profile, "department", None)
         if emp_dept:
-            qs = qs.filter(department=emp_dept)
+            qs = qs.filter(department__contains=[emp_dept])
 
         return [
             {
@@ -630,14 +630,14 @@ class EmployeeProgressViewSet(viewsets.ViewSet):
         if only_new:
             subj_filter &= Q(subject__is_new=True)
         if emp_dept:
-            subj_filter &= Q(subject__department=emp_dept)
+            subj_filter &= Q(subject__department__contains=[emp_dept])
 
         # Lesson scope
         lesson_filter = Q(display_on_frontend=True)
         if only_new:
             lesson_filter &= Q(is_new=True)
         if emp_dept:
-            lesson_filter &= Q(department=emp_dept)
+            lesson_filter &= Q(department__contains=[emp_dept])
 
         # ---- lessons grouped by subject (counts built from filtered lessons) ----
         lessons_by_subject = (

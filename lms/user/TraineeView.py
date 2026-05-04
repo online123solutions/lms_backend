@@ -77,7 +77,7 @@ class SubjectListAPIView(APIView):
         # Filter subjects for that department (also show only those meant for frontend)
         qs = (
             Subject.objects
-            .filter(department=department, display_on_frontend=True)
+            .filter(department__contains=[department], display_on_frontend=True)
             .order_by("name")
         )
 
@@ -108,8 +108,8 @@ class LessonListAPIView(APIView):
             subject = get_object_or_404(Subject, slug=slug, display_on_frontend=True)
 
             filtered_lessons = Lesson.objects.filter(
-                department=department, 
-                subject=subject, 
+                department__contains=[department],
+                subject=subject,
                 display_on_frontend=True
             )
 
@@ -234,7 +234,7 @@ class TraineeDashboardView(APIView):
             profile_data = TraineeSerializer(trainee_obj).data
 
             # login_count = UserLoginActivity.objects.filter(login_username=request.user).count()
-            subjects= Subject.objects.filter(department=trainee_obj.department)
+            subjects= Subject.objects.filter(department__contains=[trainee_obj.department])
             subjects_count = subjects.count()
 
             subjects_data = SubjectSerializer(subjects, many=True).data

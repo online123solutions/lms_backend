@@ -390,7 +390,7 @@ class Subject(models.Model):
     subject_id = models.CharField(max_length=100, unique=True)
     name = models.CharField(max_length=100)
     slug = models.SlugField(null=True, blank=True)
-    department = models.CharField(max_length=50, choices=Department, default='IT', verbose_name='Department')
+    department = models.JSONField(default=list, blank=True, verbose_name='Departments')
     image = models.ImageField(upload_to=save_subject_image, blank=True, verbose_name='Subject Image')
     description = models.TextField(max_length=500,blank=True)
     display_on_frontend = models.BooleanField(default=True, verbose_name="Display on Frontend")
@@ -421,7 +421,7 @@ def save_lesson_files(instance, filename):
 
 class Lesson(models.Model):
     lesson_id = models.CharField(max_length=100, unique=True)
-    department = models.CharField(max_length=50, choices=Department, default='IT', verbose_name='Department')
+    department = models.JSONField(default=list, blank=True, verbose_name='Departments')
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='lessons')
     name = models.CharField(max_length=250)
     position = models.PositiveSmallIntegerField(verbose_name="Chapter no.")
