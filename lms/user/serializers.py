@@ -997,8 +997,17 @@ class TrainerLessonProgressWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Trainer profile not found for user.")
         # Optional: ensure lesson belongs to same department
         lesson = attrs.get("lesson") or getattr(self.instance, "lesson", None)
-        if lesson and lesson.course.department != trainer.department:
-            raise serializers.ValidationError("You cannot update lessons outside your department.")
+        if lesson:
+            course_department = lesson.course.department
+            if isinstance(course_department, list):
+                if trainer.department not in course_department:
+                    raise serializers.ValidationError(
+                        "You cannot update lessons outside your department."
+                    )
+            elif course_department != trainer.department:
+                raise serializers.ValidationError(
+                    "You cannot update lessons outside your department."
+                )
         return attrs
 
     def create(self, validated_data):
