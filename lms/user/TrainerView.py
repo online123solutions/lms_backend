@@ -22,7 +22,7 @@ from drf_yasg import openapi
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework import viewsets
 from rest_framework.exceptions import PermissionDenied
-from rest_framework import status,permissions
+from rest_framework import status,permissions,serializers
 from .tasks import send_notification_email, send_push_notification
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
@@ -189,6 +189,14 @@ class TrainerCourseLessonView(ListCreateAPIView):
 
     def perform_create(self, serializer):
         trainer = get_object_or_404(TrainerProfile, user=self.request.user)
+        course = serializer.validated_data.get('course')
+        if course:
+            # Ensure the course belongs to trainer's department
+            if isinstance(course.department, list):
+                if trainer.department not in course.department:
+                    raise serializers.ValidationError("You can only add lessons to courses in your department.")
+            elif course.department != trainer.department:
+                raise serializers.ValidationError("You can only add lessons to courses in your department.")
         serializer.save(created_by=self.request.user)
 
 
