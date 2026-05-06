@@ -55,12 +55,8 @@ class TrainerDashboardView(APIView):
             "Shop Editing": "Shop Editor Training",
         }
 
-
-        # Get mapped trainee department
-        allowed_trainee_department = DEPARTMENT_ACCESS_MAP.get(department)
-
-        if not allowed_trainee_department:
-            return Response({"error": "No department access configured"}, status=403)
+        # Get mapped trainee department; fall back to trainer's own department
+        allowed_trainee_department = DEPARTMENT_ACCESS_MAP.get(department, department)
 
         # Filter trainees dynamically
         all_trainees = (
@@ -79,7 +75,7 @@ class TrainerDashboardView(APIView):
         trainees_data = TraineeSerializer(all_trainees, many=True, context={'request': request}).data
 
         # Courses (we can later add filtering by department or trainer-assigned logic)
-        courses = Courses.objects.filter(department=department)
+        courses = Courses.objects.filter(department__icontains=f'"{department}"')
         course_count = courses.count()
 
         # Active users in the trainer's department
@@ -167,7 +163,7 @@ class TrainerCourseView(ListCreateAPIView):
     def get_queryset(self):
         try:
             trainer = TrainerProfile.objects.get(user=self.request.user)
-            return Courses.objects.filter(department=trainer.department, display_on_frontend=True)
+            return Courses.objects.filter(department__icontains=f'"{trainer.department}"', display_on_frontend=True)
         except TrainerProfile.DoesNotExist:
             return Courses.objects.none()
 
@@ -187,7 +183,7 @@ class TrainerCourseLessonView(ListCreateAPIView):
     def get_queryset(self):
         trainer = get_object_or_404(TrainerProfile, user=self.request.user)
         return CourseLesson.objects.filter(
-            course__department=trainer.department,
+            course__department__icontains=f'"{trainer.department}"',
             display_on_frontend=True
         )
 
@@ -1141,7 +1137,7 @@ class TrainerLessonProgressDetailView(RetrieveUpdateAPIView):
         return (
             TrainerLessonProgress.objects
             .select_related("lesson", "lesson__course")
-            .filter(trainer=trainer, lesson__course__department=trainer.department)
+            .filter(trainer=trainer, lesson__course__department__icontains=f'"{trainer.department}"')
         )
     
 class IsAuth(permissions.IsAuthenticated):

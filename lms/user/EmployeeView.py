@@ -130,7 +130,7 @@ class EmployeeDashboardView(APIView):
 
             # Subjects (filtered for frontend, department)
             subjects_qs = Subject.objects.filter(
-                department__contains=[department],
+                department__icontains=f'"{department}"',
                 display_on_frontend=True
             ).order_by("name")
             subjects_count = subjects_qs.count()
@@ -142,7 +142,7 @@ class EmployeeDashboardView(APIView):
 
             # New lessons (across all subjects in department, based on is_new)
             new_lessons_qs = Lesson.objects.filter(
-                department__contains=[department],
+                department__icontains=f'"{department}"',
                 display_on_frontend=True,
                 is_new=True
             ).order_by("subject__name", "position")
@@ -595,7 +595,7 @@ class EmployeeProgressViewSet(viewsets.ViewSet):
         # optional dept narrowing
         emp_dept = getattr(employee_profile, "department", None)
         if emp_dept:
-            qs = qs.filter(department__contains=[emp_dept])
+            qs = qs.filter(department__icontains=f'"{emp_dept}"')
 
         return [
             {
@@ -630,14 +630,14 @@ class EmployeeProgressViewSet(viewsets.ViewSet):
         if only_new:
             subj_filter &= Q(subject__is_new=True)
         if emp_dept:
-            subj_filter &= Q(subject__department__contains=[emp_dept])
+            subj_filter &= Q(subject__department__icontains=f'"{emp_dept}"')
 
         # Lesson scope
         lesson_filter = Q(display_on_frontend=True)
         if only_new:
             lesson_filter &= Q(is_new=True)
         if emp_dept:
-            lesson_filter &= Q(department__contains=[emp_dept])
+            lesson_filter &= Q(department__icontains=f'"{emp_dept}"')
 
         # ---- lessons grouped by subject (counts built from filtered lessons) ----
         lessons_by_subject = (

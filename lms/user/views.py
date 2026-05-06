@@ -6,7 +6,8 @@ from .serializers import (
     SOPSerializer,StandardLibraryItemSerializer, TraineeProfileUpdateSerializer, TrainerProfileUpdateSerializer, ChangePasswordSerializer
 )
 from .models import (
-    CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile, AdminProfile,NotificationReceipt,SOP,StandardLibraryItem
+    CustomUser, TraineeProfile, EmployeeProfile, TrainerProfile, AdminProfile,NotificationReceipt,SOP,StandardLibraryItem,
+    Department,
 )
 from .tasks import send_welcome_email,send_password_reset_email
 from drf_yasg.utils import swagger_auto_schema
@@ -823,3 +824,20 @@ class BaseSLListView(ListAPIView):
                         qs = qs.filter(tags__icontains=t)
 
         return qs
+
+
+class DepartmentListView(APIView):
+    """
+    GET /departments/
+    Returns the full list of departments defined in the system.
+    Used by frontend dropdowns (Macroplanner, Microplanner, etc.)
+    so adding a department to models.py automatically propagates everywhere.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, _request):
+        departments = [
+            {"value": value, "label": label}
+            for value, label in Department
+        ]
+        return Response(departments)

@@ -18,7 +18,7 @@ class DepartmentListFilter(admin.SimpleListFilter):
 
     def queryset(self, request, queryset):
         if self.value():
-            return queryset.filter(department__contains=[self.value()])
+            return queryset.filter(department__icontains=f'"{self.value()}"')
         return queryset
 
 
@@ -45,6 +45,31 @@ class LessonAdminForm(forms.ModelForm):
         model = Lesson
         fields = '__all__'
 
+
+class CoursesAdminForm(forms.ModelForm):
+    department = forms.MultipleChoiceField(
+        choices=Department,
+        widget=forms.CheckboxSelectMultiple,
+        required=False,
+    )
+
+    class Meta:
+        model = Courses
+        fields = '__all__'
+
+
+class CourseDepartmentListFilter(admin.SimpleListFilter):
+    title = 'department'
+    parameter_name = 'department'
+
+    def lookups(self, request, model_admin):
+        return Department
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(course__department__icontains=f'"{self.value()}"')
+        return queryset
+
 # Register your models here.
 @admin.register(CustomUser)
 class CustomUserAdmin(admin.ModelAdmin):
@@ -68,18 +93,25 @@ admin.site.register(AdminProfile)
 
 @admin.register(Courses)
 class CoursesAdmin(admin.ModelAdmin):
-    list_display = ('course_id', 'course_name', 'department', 'is_approved', 'display_on_frontend', 'created_by')
-    list_filter = ('department', 'is_approved')
+    form = CoursesAdminForm
+    list_display = ('course_id', 'course_name', 'display_departments', 'is_approved', 'display_on_frontend', 'created_by')
+    list_filter = (DepartmentListFilter, 'is_approved')
     search_fields = ('course_id', 'course_name')
     readonly_fields = ('created_at', 'updated_at')
     autocomplete_fields = ['created_by']
     ordering = ['-created_at']
 
+    def display_departments(self, obj):
+        if isinstance(obj.department, list):
+            return ', '.join(obj.department) if obj.department else '-'
+        return obj.department or '-'
+    display_departments.short_description = 'Departments'
+
 
 @admin.register(CourseLesson)
 class CourseLessonAdmin(admin.ModelAdmin):
     list_display = ('lesson_id', 'lesson_name', 'course', 'is_approved', 'display_on_frontend', 'created_by')
-    list_filter = ('course__department', 'is_approved', 'course')
+    list_filter = (CourseDepartmentListFilter, 'is_approved', 'course')
     search_fields = ('lesson_id', 'lesson_name', 'course__course_name')
     readonly_fields = ('created_at', 'updated_at')
     autocomplete_fields = ['course', 'created_by']

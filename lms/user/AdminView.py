@@ -75,7 +75,7 @@ class AdminDashboardView(APIView):
             dept_user_count = dept_users.count()
 
             # Courses in this department
-            dept_courses = Courses.objects.filter(department=dept_name)
+            dept_courses = Courses.objects.filter(department__icontains=f'"{dept_name}"')
             dept_course_count = dept_courses.count()
 
             # Trainees in this department

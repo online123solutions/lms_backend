@@ -137,7 +137,7 @@ MONTH_CHOICES = [
 class Courses(models.Model):
     course_id=models.CharField(max_length=100,unique=True)
     course_name=models.CharField(max_length=100)
-    department=models.CharField(max_length=100,choices=Department)
+    department=models.JSONField(default=list, blank=True, verbose_name='Departments')
     display_on_frontend = models.BooleanField(default=True, verbose_name="Display on Frontend")
     created_by = models.ForeignKey(
         CustomUser,

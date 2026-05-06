@@ -1,7 +1,7 @@
 from django.urls import path,include
 from .views import (
     RegistrationView,LoginView,UserLogoutView,DownloadUserTemplate,UploadUsersExcelView,BulkPasswordResetView,mark_notification_read,PasswordResetRequestView,
-    PasswordResetConfirmView, TraineeProfileUpdateView, TrainerProfileUpdateView, ChangePasswordView
+    PasswordResetConfirmView, TraineeProfileUpdateView, TrainerProfileUpdateView, ChangePasswordView, DepartmentListView
 )
 from .TrainerView import (
     TrainerDashboardView, TrainerCourseView,TrainerCourseLessonView,MacroplannerViewSet, MicroplannerViewSet,AssessmentListCreateView,
@@ -49,6 +49,7 @@ router.register(r"trainee/concerns", ConcernViewSet, basename="concern")
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('departments/', DepartmentListView.as_view(), name='department-list'),
     path('account/register/', RegistrationView.as_view(), name='register'),
     path('account/login/', LoginView.as_view(), name='login'), 
     path('account/logout/', UserLogoutView.as_view(), name='logout'),
