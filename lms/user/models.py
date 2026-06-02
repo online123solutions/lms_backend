@@ -327,6 +327,7 @@ class Query(models.Model):
         ('assessment', 'Assessment'),
         ('training', 'Training'),
         ('general', 'General'),
+        ('technical', 'Technical'),
     ]
     
     RAISED_BY_CHOICES = [
@@ -341,7 +342,8 @@ class Query(models.Model):
     is_resolved = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     raised_by_role = models.CharField(max_length=20, choices=RAISED_BY_CHOICES, default='employee')  # Trainee or Employee
-    department = models.CharField(max_length=100,choices=Department,default="IT")  # To store the department of the person who raised the query
+    department = models.CharField(max_length=100,choices=Department,default="IT")
+    attachments = models.JSONField(default=list, blank=True)  # To store the department of the person who raised the query
 
     def __str__(self):
         return f"Query by {self.raised_by.username} - {self.question[:30]}"

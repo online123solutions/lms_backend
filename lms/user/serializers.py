@@ -566,15 +566,17 @@ class QuerySerializer(serializers.ModelSerializer):
     raised_by = serializers.StringRelatedField()
     assigned_trainer = serializers.StringRelatedField()
     responses = QueryResponseSerializer(many=True, read_only=True)
+    attachments = serializers.JSONField(read_only=True)
 
     class Meta:
         model = Query
         fields = [
             'id',
-            'raised_by', 'assigned_trainer', 'notify_trainer', 'department',
+            'raised_by', 'assigned_trainer', 'department',
             'question', 'category', 'is_resolved', 'created_at',
-            'raised_by_role', 'responses'
+            'raised_by_role', 'responses', 'attachments'
         ]
+        read_only_fields = ['attachments']
 
     def create(self, validated_data):
         user = validated_data['raised_by']

@@ -23,6 +23,7 @@ from quiz.models import Result, Quiz
 from quiz.serializers import QuizSerializer
 from rest_framework.exceptions import NotFound,PermissionDenied
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.authentication import TokenAuthentication
 from collections import defaultdict
 from datetime import timedelta
 from django.db.models import Max,Avg,Count,Q
@@ -364,33 +365,42 @@ class AvailableQuizListAPIView(ListAPIView):
     
 class TraineeQueryListAPIView(APIView):
     permission_classes = [IsAuthenticated]
+    authentication_classes = [TokenAuthentication]
 
     def get(self, request):
-        try:
-            trainee_profile = get_object_or_404(TraineeProfile, user=request.user)
-
-            queries = Query.objects.filter(raised_by=request.user)
-            serializer = QuerySerializer(queries, many=True)
-
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        
-        except TraineeProfile.DoesNotExist:
-            return Response({"error": "No TraineeProfile matches the given query."}, status=status.HTTP_404_NOT_FOUND)
-
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        queries = Query.objects.filter(raised_by=request.user).order_by('-created_at')
+        serializer = QuerySerializer(queries, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 class TraineeQueryCreateAPIView(APIView):
     permission_classes = [IsAuthenticated]
-    parser_classes= [MultiPartParser, FormParser]
+    authentication_classes = [TokenAuthentication]
+    parser_classes = [MultiPartParser, FormParser]
 
     @swagger_auto_schema(request_body=QuerySerializer)
     def post(self, request):
         serializer = QuerySerializer(data=request.data)
         if serializer.is_valid():
-            query=serializer.save(raised_by=request.user)
+            query = serializer.save(raised_by=request.user)
+
+            # Handle multiple file attachments (PDF or images)
+            files = request.FILES.getlist('attachments')
+            saved_urls = []
+            for f in files:
+                ext = f.name.rsplit('.', 1)[-1].lower()
+                if ext not in ('pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp'):
+                    continue
+                from django.core.files.storage import default_storage
+                path = default_storage.save(f'query_attachments/{query.id}/{f.name}', f)
+                # Store the full accessible URL so frontend can link directly
+                saved_urls.append(request.build_absolute_uri(default_storage.url(path)))
+
+            if saved_urls:
+                query.attachments = saved_urls
+                query.save(update_fields=['attachments'])
+
             query.notify_trainer()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(QuerySerializer(query).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class TraineeQueryResponseAPIView(APIView):
