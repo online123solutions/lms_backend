@@ -1805,6 +1805,67 @@ class AdminLessonUploadPDFView(APIView):
                 "message": "PDF successfully removed",
                 "remaining_pdfs": pdf_paths
             }, status=status.HTTP_200_OK)
-            
+
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ---------------------------------------------------------------------------
+# Trainer Branch Assignment (admin only)
+# ---------------------------------------------------------------------------
+
+class AdminTrainerListView(APIView):
+    """
+    GET /custom_admin/trainers/
+    Returns all trainer profiles with their currently assigned branches.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role != 'admin' and not request.user.is_superuser:
+            return Response({"error": "Admin access required."}, status=status.HTTP_403_FORBIDDEN)
+
+        trainers = TrainerProfile.objects.select_related('user').all().order_by('user__username')
+        data = [
+            {
+                "id": tp.id,
+                "username": tp.user.username,
+                "name": tp.name or tp.user.username,
+                "email": tp.user.email,
+                "department": tp.department,
+                "assigned_departments": tp.assigned_departments or [],
+            }
+            for tp in trainers
+        ]
+        return Response(data, status=status.HTTP_200_OK)
+
+
+class AdminAssignTrainerBranchesView(APIView):
+    """
+    PATCH /custom_admin/trainers/<pk>/assign-branches/
+    Admin assigns one or more branches to a trainer.
+    Body: { "assigned_departments": ["Branch A", "Branch B"] }
+    """
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk):
+        if request.user.role != 'admin' and not request.user.is_superuser:
+            return Response({"error": "Admin access required."}, status=status.HTTP_403_FORBIDDEN)
+
+        trainer_profile = get_object_or_404(TrainerProfile, pk=pk)
+        assigned = request.data.get("assigned_departments", None)
+
+        if assigned is None:
+            return Response({"error": "assigned_departments is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(assigned, list):
+            return Response({"error": "assigned_departments must be a list."}, status=status.HTTP_400_BAD_REQUEST)
+
+        trainer_profile.assigned_departments = [d for d in assigned if d]
+        trainer_profile.save(update_fields=["assigned_departments"])
+
+        return Response({
+            "id": trainer_profile.id,
+            "username": trainer_profile.user.username,
+            "name": trainer_profile.name,
+            "assigned_departments": trainer_profile.assigned_departments,
+        }, status=status.HTTP_200_OK)

@@ -79,6 +79,7 @@ class TrainerProfile(models.Model):
     designation = models.CharField(max_length=100)
     expertise = models.TextField(blank=True)  # topics or designations they handle
     profile_picture = models.ImageField(upload_to='trainer_profiles/', default='default_profile.jpg', null=True, blank=True)
+    assigned_departments = models.JSONField(default=list, blank=True, verbose_name='Assigned Branches')
 
 
     def __str__(self):

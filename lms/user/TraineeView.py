@@ -27,6 +27,7 @@ from collections import defaultdict
 from datetime import timedelta
 from django.db.models import Max,Avg,Count,Q
 from django.db.models import Exists, OuterRef
+from .TrainerView import get_trainer_allowed_departments
 
 # views.py
 from rest_framework.views import APIView
@@ -885,15 +886,10 @@ class TraineeTaskSubmissionViewSet(viewsets_ViewSet):
         elif role == "trainer":
             tp = self._trainer_profile(user)
             q = Q()
-            if tp and getattr(tp, "department", None):
-                # Map trainer department to trainee department
-                department_mapping = {
-                    "Development": "Training",
-                    "Shop Editing": "Shop Editor Training"
-                }
-                trainer_dept = str(tp.department)
-                mapped_dept = department_mapping.get(trainer_dept, trainer_dept)
-                q &= Q(department__iexact=mapped_dept)
+            if tp:
+                depts = get_trainer_allowed_departments(tp)
+                if depts:
+                    q &= Q(department__in=depts)
             qs = self._apply_admin_trainer_filters(self._base_qs().filter(q)).order_by("-submitted_at")
 
         elif role == "trainee":

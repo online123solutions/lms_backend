@@ -43,46 +43,64 @@ DEPARTMENT_ACCESS_MAP = {
     "Shop Editing": "Shop Editor Training",
 }
 
+
+def get_trainer_allowed_departments(trainer_profile):
+    """
+    Returns the list of trainee/employee departments this trainer can see.
+    Priority:
+      1. admin-assigned branches (assigned_departments field)
+      2. fallback: map the trainer's own department via DEPARTMENT_ACCESS_MAP
+    """
+    assigned = trainer_profile.assigned_departments or []
+    if assigned:
+        return list(assigned)
+    raw = trainer_profile.department or ""
+    mapped = DEPARTMENT_ACCESS_MAP.get(raw, raw)
+    return [mapped] if mapped else []
+
+
 class TrainerDashboardView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
         try:
             trainer_obj = TrainerProfile.objects.get(user=request.user)
-            department = trainer_obj.department
         except TrainerProfile.DoesNotExist:
             return Response({"error": "Trainer profile not found."}, status=404)
 
-        # Profile data
         profile_data = TrainerSerializer(trainer_obj, context={'request': request}).data
+        depts = get_trainer_allowed_departments(trainer_obj)
 
-        # Get mapped trainee department; fall back to trainer's own department
-        allowed_trainee_department = DEPARTMENT_ACCESS_MAP.get(department, department)
-
-        # Filter trainees dynamically
+        # Filter trainees from all allowed departments
         all_trainees = (
             TraineeProfile.objects
-            .filter(department=allowed_trainee_department)
+            .filter(department__in=depts)
             .select_related('user', 'trainer')
-        )
-        
-        # Count of all trainees with department "Training"
-        total_trainees = all_trainees.count()
-        
-        # Count of trainees assigned to this trainer
-        assigned_trainees_count = all_trainees.filter(trainer=request.user).count()
+        ) if depts else TraineeProfile.objects.none()
 
-        # Serialize all trainees
+        total_trainees = all_trainees.count()
+        assigned_trainees_count = all_trainees.filter(trainer=request.user).count()
         trainees_data = TraineeSerializer(all_trainees, many=True, context={'request': request}).data
 
-        # Courses (we can later add filtering by department or trainer-assigned logic)
-        courses = Courses.objects.filter(department__icontains=f'"{department}"')
+        # Courses for all allowed departments
+        course_q = Q()
+        for d in depts:
+            course_q |= Q(department__icontains=f'"{d}"')
+        courses = Courses.objects.filter(course_q) if depts else Courses.objects.none()
         course_count = courses.count()
 
-        # Active users in the trainer's department
-        active_users = get_active_users(department).select_related("trainee_profile", "employee_profile")
-        data = ActiveUserSerializer(active_users, many=True).data
+        # Active users across all allowed departments
+        from django.db.models import Q as DQ
+        active_q = DQ()
+        for d in depts:
+            active_q |= DQ(trainee_profile__department=d) | DQ(employee_profile__department=d)
+        from .models import CustomUser as CU
+        active_users = (
+            CU.objects.filter(active_q, is_active=True).distinct()
+            .select_related("trainee_profile", "employee_profile")
+        ) if depts else CU.objects.none()
         active_count = active_users.count()
+        active_data = ActiveUserSerializer(active_users, many=True).data
 
         return Response({
             "profile": profile_data,
@@ -92,7 +110,8 @@ class TrainerDashboardView(APIView):
             "course_count": course_count,
             "courses": list(courses.values("course_id", "course_name", "department", "is_approved")),
             "active_count": active_count,
-            "active_users": data,
+            "active_users": active_data,
+            "allowed_departments": depts,
         }, status=200)
 
 
@@ -113,44 +132,26 @@ class TraineeListAPIView(APIView):
         },
     )
     def get(self, request):
-        # Check if user is a trainer
         if request.user.role != 'trainer':
             return Response(
                 {"error": "Only trainers can access this endpoint."},
                 status=status.HTTP_403_FORBIDDEN
             )
-
-        # Get trainer's department
         try:
             trainer_profile = TrainerProfile.objects.get(user=request.user)
-            trainer_department = trainer_profile.department
         except TrainerProfile.DoesNotExist:
-            return Response(
-                {"error": "Trainer profile not found."},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({"error": "Trainer profile not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        # Map trainer department to trainee department
-        # Trainers with "Development" department see trainees with "Training" department
-        # All other trainers see trainees from their same department
-        if trainer_department == "Development":
-            trainee_department = "Training"
-        elif trainer_department == "Shop Editing":
-            trainee_department = "Shop Editor Training"
-        else:
-            trainee_department = trainer_department
+        depts = get_trainer_allowed_departments(trainer_profile)
+        trainees = (
+            TraineeProfile.objects.filter(department__in=depts)
+            .select_related('user', 'trainer').order_by('user__username')
+        ) if depts else TraineeProfile.objects.none()
 
-        # Get all trainees with the mapped department
-        trainees = TraineeProfile.objects.filter(
-            department=trainee_department
-        ).select_related('user', 'trainer').order_by('user__username')
-
-        # Serialize trainees
         serializer = TraineeSerializer(trainees, many=True, context={'request': request})
-        
         return Response({
             "trainees": serializer.data,
-            "trainer_department": trainer_department,
+            "allowed_departments": depts,
             "count": trainees.count()
         }, status=status.HTTP_200_OK)
 
@@ -164,10 +165,15 @@ class TrainerCourseView(ListCreateAPIView):
     def get_queryset(self):
         try:
             trainer = TrainerProfile.objects.get(user=self.request.user)
-            return Courses.objects.filter(department__icontains=f'"{trainer.department}"', display_on_frontend=True)
         except TrainerProfile.DoesNotExist:
             return Courses.objects.none()
-
+        depts = get_trainer_allowed_departments(trainer)
+        if not depts:
+            return Courses.objects.none()
+        q = Q()
+        for d in depts:
+            q |= Q(department__icontains=f'"{d}"')
+        return Courses.objects.filter(q, display_on_frontend=True)
 
     def perform_create(self, serializer):
         trainer = get_object_or_404(TrainerProfile, user=self.request.user)
@@ -183,21 +189,22 @@ class TrainerCourseLessonView(ListCreateAPIView):
 
     def get_queryset(self):
         trainer = get_object_or_404(TrainerProfile, user=self.request.user)
-        return CourseLesson.objects.filter(
-            course__department__icontains=f'"{trainer.department}"',
-            display_on_frontend=True
-        )
+        depts = get_trainer_allowed_departments(trainer)
+        if not depts:
+            return CourseLesson.objects.none()
+        q = Q()
+        for d in depts:
+            q |= Q(course__department__icontains=f'"{d}"')
+        return CourseLesson.objects.filter(q, display_on_frontend=True)
 
     def perform_create(self, serializer):
         trainer = get_object_or_404(TrainerProfile, user=self.request.user)
+        depts = get_trainer_allowed_departments(trainer)
         course = serializer.validated_data.get('course')
         if course:
-            # Ensure the course belongs to trainer's department
-            if isinstance(course.department, list):
-                if trainer.department not in course.department:
-                    raise serializers.ValidationError("You can only add lessons to courses in your department.")
-            elif course.department != trainer.department:
-                raise serializers.ValidationError("You can only add lessons to courses in your department.")
+            course_depts = course.department if isinstance(course.department, list) else [course.department]
+            if not any(d in depts for d in course_depts):
+                raise serializers.ValidationError("You can only add lessons to courses in your assigned departments.")
         serializer.save(created_by=self.request.user)
 
 
@@ -208,9 +215,10 @@ class MacroplannerViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         try:
             trainer = TrainerProfile.objects.get(user=self.request.user)
-            return Macroplanner.objects.filter(department=trainer.department)
         except TrainerProfile.DoesNotExist:
             raise PermissionDenied("Only trainers can access department-specific planners.")
+        depts = get_trainer_allowed_departments(trainer)
+        return Macroplanner.objects.filter(department__in=depts) if depts else Macroplanner.objects.none()
 
     def perform_create(self, serializer):
         trainer = TrainerProfile.objects.get(user=self.request.user)
@@ -228,9 +236,10 @@ class MicroplannerViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         try:
             trainer = TrainerProfile.objects.get(user=self.request.user)
-            return Microplanner.objects.filter(department=trainer.department)
         except TrainerProfile.DoesNotExist:
             raise PermissionDenied("Only trainers can access department-specific planners.")
+        depts = get_trainer_allowed_departments(trainer)
+        return Microplanner.objects.filter(department__in=depts) if depts else Microplanner.objects.none()
 
     def perform_create(self, serializer):
         trainer = TrainerProfile.objects.get(user=self.request.user)
@@ -445,10 +454,7 @@ class LMSEngagementView(ListAPIView):
             tp = TrainerProfile.objects.get(user=self.request.user)
         except TrainerProfile.DoesNotExist:
             return []
-        raw = tp.department or ""
-        # Map trainer department → trainee department (same logic as TrainerDashboardView)
-        mapped = DEPARTMENT_ACCESS_MAP.get(raw, raw)
-        return [mapped] if mapped else []
+        return get_trainer_allowed_departments(tp)
 
     def get_queryset(self):
         depts = self.get_trainee_departments()
@@ -931,34 +937,22 @@ class TrainingReportView(viewsets.ViewSet):
             ).distinct()
 
         elif user.role == 'trainer':
-            # Get trainer's department
             try:
                 trainer_profile = TrainerProfile.objects.get(user=user)
-                trainer_department = trainer_profile.department
             except TrainerProfile.DoesNotExist:
                 return Response(
                     {"error": "Trainer profile not found."},
                     status=status.HTTP_404_NOT_FOUND
                 )
-            
-            # Map trainer department to trainee department
-            # Development trainers see Training trainees
-            # Shop Editing trainers see Shop Editor Training trainees
-            # All other trainers see trainees from their same department
-            department_mapping = {
-                "Development": "Training",
-                "Shop Editing": "Shop Editor Training"
-            }
-            trainee_department = department_mapping.get(trainer_department, trainer_department)
-            
-            # Get trainees from the mapped department
+
+            depts = get_trainer_allowed_departments(trainer_profile)
             trainee_user_ids = (
                 TraineeProfile.objects
-                .filter(department=trainee_department)
+                .filter(department__in=depts)
                 .values_list('user_id', flat=True)
-            )
+            ) if depts else []
             users = CustomUser.objects.filter(
-                Q(id__in=trainee_user_ids) | Q(id=user.id, role='employee'),
+                Q(id__in=trainee_user_ids),
                 is_active=True
             ).distinct()
         else:
@@ -998,30 +992,18 @@ class TrainingReportView(viewsets.ViewSet):
             pass  # Admin can view anyone
         elif requester.role == 'trainer':
             if target_user.role == 'trainee':
-                # Check if trainer can view this trainee based on department mapping
                 try:
                     trainer_profile = TrainerProfile.objects.get(user=requester)
                     trainee_profile = TraineeProfile.objects.get(user=target_user)
-                    
-                    # Map trainer department to trainee department
-                    department_mapping = {
-                        "Development": "Training",
-                        "Shop Editing": "Shop Editor Training"
-                    }
-                    allowed_trainee_dept = department_mapping.get(
-                        trainer_profile.department, 
-                        trainer_profile.department
-                    )
-                    
-                    # Check if trainee is in the allowed department
-                    if trainee_profile.department != allowed_trainee_dept:
+                    depts = get_trainer_allowed_departments(trainer_profile)
+                    if trainee_profile.department not in depts:
                         return Response(
-                            {"error": "Unauthorized access - trainee not in your department"}, 
+                            {"error": "Unauthorized access - trainee not in your assigned branches"},
                             status=status.HTTP_403_FORBIDDEN
                         )
                 except (TrainerProfile.DoesNotExist, TraineeProfile.DoesNotExist):
                     return Response(
-                        {"error": "Profile not found"}, 
+                        {"error": "Profile not found"},
                         status=status.HTTP_404_NOT_FOUND
                     )
             elif target_user.role == 'employee':
@@ -1147,10 +1129,16 @@ class TrainerLessonProgressDetailView(RetrieveUpdateAPIView):
         trainer = getattr(self.request.user, "trainer_profile", None)
         if not trainer:
             return TrainerLessonProgress.objects.none()
+        depts = get_trainer_allowed_departments(trainer)
+        if not depts:
+            return TrainerLessonProgress.objects.none()
+        dept_q = Q()
+        for d in depts:
+            dept_q |= Q(lesson__course__department__icontains=f'"{d}"')
         return (
             TrainerLessonProgress.objects
             .select_related("lesson", "lesson__course")
-            .filter(trainer=trainer, lesson__course__department__icontains=f'"{trainer.department}"')
+            .filter(dept_q, trainer=trainer)
         )
     
 class IsAuth(permissions.IsAuthenticated):
@@ -1213,15 +1201,10 @@ class TaskAssignmentViewSet(viewsets.ViewSet):
         elif role == "trainer":
             tp = self._trainer_profile(user)
             q = Q()
-            if tp and getattr(tp, "department", None):
-                # Map trainer department to trainee department
-                department_mapping = {
-                    "Development": "Training",
-                    "Shop Editing": "Shop Editor Training"
-                }
-                trainer_dept = str(tp.department)
-                mapped_dept = department_mapping.get(trainer_dept, trainer_dept)
-                q &= Q(department__iexact=mapped_dept)
+            if tp:
+                depts = get_trainer_allowed_departments(tp)
+                if depts:
+                    q &= Q(department__in=depts)
             qs = self._apply_filters(self._base_qs().filter(q)).order_by("-created_at")
 
         elif role in ("trainee", "employee"):
@@ -1258,19 +1241,9 @@ class TaskAssignmentViewSet(viewsets.ViewSet):
             pass
         elif role == "trainer":
             tp = self._trainer_profile(user)
-            dept = getattr(tp, "department", None) if tp else None
-            if dept and obj.department:
-                # Map trainer department to trainee department
-                department_mapping = {
-                    "Development": "Training",
-                    "Shop Editing": "Shop Editor Training"
-                }
-                trainer_dept = str(dept)
-                mapped_dept = department_mapping.get(trainer_dept, trainer_dept)
-                if str(obj.department).lower() != mapped_dept.lower():
-                    return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
-            else:
-                return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+            depts = get_trainer_allowed_departments(tp) if tp else []
+            if not depts or (obj.department and str(obj.department) not in depts):
+                return Response({"error": "Unauthorized - task not in your assigned branches"}, status=status.HTTP_403_FORBIDDEN)
         elif role in ("trainee", "employee"):
             if obj.assigned_to_id != user.id:
                 return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
@@ -1294,19 +1267,9 @@ class TaskAssignmentViewSet(viewsets.ViewSet):
         # Check department authorization for trainers
         if role == "trainer" and not (user.is_staff or getattr(user, "is_superuser", False)):
             tp = self._trainer_profile(user)
-            dept = getattr(tp, "department", None) if tp else None
-            if dept and obj.department:
-                # Map trainer department to trainee department
-                department_mapping = {
-                    "Development": "Training",
-                    "Shop Editing": "Shop Editor Training"
-                }
-                trainer_dept = str(dept)
-                mapped_dept = department_mapping.get(trainer_dept, trainer_dept)
-                if str(obj.department).lower() != mapped_dept.lower():
-                    return Response({"error": "Unauthorized - task not in your department"}, status=status.HTTP_403_FORBIDDEN)
-            else:
-                return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+            depts = get_trainer_allowed_departments(tp) if tp else []
+            if not depts or (obj.department and str(obj.department) not in depts):
+                return Response({"error": "Unauthorized - task not in your assigned branches"}, status=status.HTTP_403_FORBIDDEN)
 
         # Allow editing common fields; status may be controlled via actions
         allowed = {"title", "instructions", "department", "priority", "assigned_to", "due_at", "attachment", "max_marks", "requires_submission", "status"}
@@ -1372,19 +1335,9 @@ class TaskAssignmentViewSet(viewsets.ViewSet):
         # Check department authorization for trainers
         if role == "trainer" and not (user.is_staff or getattr(user, "is_superuser", False)):
             tp = self._trainer_profile(user)
-            dept = getattr(tp, "department", None) if tp else None
-            if dept and obj.department:
-                # Map trainer department to trainee department
-                department_mapping = {
-                    "Development": "Training",
-                    "Shop Editing": "Shop Editor Training"
-                }
-                trainer_dept = str(dept)
-                mapped_dept = department_mapping.get(trainer_dept, trainer_dept)
-                if str(obj.department).lower() != mapped_dept.lower():
-                    return Response({"error": "Unauthorized - task not in your department"}, status=status.HTTP_403_FORBIDDEN)
-            else:
-                return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+            depts = get_trainer_allowed_departments(tp) if tp else []
+            if not depts or (obj.department and str(obj.department) not in depts):
+                return Response({"error": "Unauthorized - task not in your assigned branches"}, status=status.HTTP_403_FORBIDDEN)
 
         obj.status = TaskAssignment.STATUS_COMPLETED
         obj.save(update_fields=["status", "updated_at"])
@@ -1406,19 +1359,9 @@ class TaskAssignmentViewSet(viewsets.ViewSet):
         # Check department authorization for trainers
         if role == "trainer" and not (user.is_staff or getattr(user, "is_superuser", False)):
             tp = self._trainer_profile(user)
-            dept = getattr(tp, "department", None) if tp else None
-            if dept and obj.department:
-                # Map trainer department to trainee department
-                department_mapping = {
-                    "Development": "Training",
-                    "Shop Editing": "Shop Editor Training"
-                }
-                trainer_dept = str(dept)
-                mapped_dept = department_mapping.get(trainer_dept, trainer_dept)
-                if str(obj.department).lower() != mapped_dept.lower():
-                    return Response({"error": "Unauthorized - task not in your department"}, status=status.HTTP_403_FORBIDDEN)
-            else:
-                return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+            depts = get_trainer_allowed_departments(tp) if tp else []
+            if not depts or (obj.department and str(obj.department) not in depts):
+                return Response({"error": "Unauthorized - task not in your assigned branches"}, status=status.HTTP_403_FORBIDDEN)
 
         obj.status = TaskAssignment.STATUS_CANCELLED
         obj.save(update_fields=["status", "updated_at"])
