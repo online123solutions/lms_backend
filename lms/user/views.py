@@ -122,6 +122,7 @@ class RegistrationView(APIView):
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []
     @swagger_auto_schema(
         request_body=LoginSerializer,
         responses={200: 'Token', 400: 'Bad Request'}
@@ -405,6 +406,7 @@ def mark_notification_read(request):
 
 class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []
     
     def initial(self, request, *args, **kwargs):
         self.raw_body = request.body.decode('utf-8') if request.body else 'No body'
@@ -436,6 +438,7 @@ class PasswordResetRequestView(APIView):
     
 class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []
     
     def post(self, request, uidb64, token):
         try:
