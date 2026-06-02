@@ -38,6 +38,11 @@ from .views import BaseSLListView,BaseSOPListView
 from django.db.models import Q, Count, OuterRef, Subquery, DateTimeField, Exists
 from django.utils import timezone
 
+DEPARTMENT_ACCESS_MAP = {
+    "Development": "Training",
+    "Shop Editing": "Shop Editor Training",
+}
+
 class TrainerDashboardView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -50,10 +55,6 @@ class TrainerDashboardView(APIView):
 
         # Profile data
         profile_data = TrainerSerializer(trainer_obj, context={'request': request}).data
-        DEPARTMENT_ACCESS_MAP = {
-            "Development": "Training",
-            "Shop Editing": "Shop Editor Training",
-        }
 
         # Get mapped trainee department; fall back to trainer's own department
         allowed_trainee_department = DEPARTMENT_ACCESS_MAP.get(department, department)
@@ -439,24 +440,28 @@ class LMSEngagementView(ListAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = UserLoginActivitySerializer
 
-    def get_trainer_department(self):
+    def get_trainee_departments(self):
         try:
             tp = TrainerProfile.objects.get(user=self.request.user)
         except TrainerProfile.DoesNotExist:
-            raise NotFound("Trainer profile not found.")
-        # works whether department is a string or FK object
-        return tp.department
+            return []
+        raw = tp.department or ""
+        # Map trainer department → trainee department (same logic as TrainerDashboardView)
+        mapped = DEPARTMENT_ACCESS_MAP.get(raw, raw)
+        return [mapped] if mapped else []
 
     def get_queryset(self):
-        dept = self.get_trainer_department()
+        depts = self.get_trainee_departments()
+        if not depts:
+            return UserLoginActivity.objects.none()
 
-        # Collect usernames for BOTH trainees and employees in this department
+        # Collect usernames for BOTH trainees and employees in these departments
         trainee_usernames = TraineeProfile.objects.filter(
-            department=dept
+            department__in=depts
         ).values_list("user__username", flat=True)
 
         employee_usernames = EmployeeProfile.objects.filter(
-            department=dept
+            department__in=depts
         ).values_list("user__username", flat=True)
 
         usernames = list(set(list(trainee_usernames) + list(employee_usernames)))
