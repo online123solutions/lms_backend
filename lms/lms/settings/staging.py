@@ -1,6 +1,13 @@
 from .base import *
 from decouple import config
 
+MIDDLEWARE.insert(2, 'whitenoise.middleware.WhiteNoiseMiddleware')
+STORAGES = {
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="*", cast=lambda v: [s.strip() for s in v.split(",")])
 
 DEBUG = config("DEBUG", default=True, cast=bool)
