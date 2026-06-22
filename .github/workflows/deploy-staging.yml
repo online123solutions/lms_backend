@@ -1,0 +1,35 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches:
+      - staging
+
+jobs:
+  deploy:
+    name: Deploy via SSH
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to staging server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          port: ${{ secrets.STAGING_PORT || 22 }}
+          script: |
+            set -e
+
+            cd /opt/staging/lms
+
+            echo "Pulling latest staging branch..."
+            git pull origin staging
+
+            echo "Building and starting containers..."
+            docker compose -f docker-compose.staging.yml up -d --build
+
+            echo "Removing unused Docker images..."
+            docker image prune -f
+
+            echo "Deployment complete."

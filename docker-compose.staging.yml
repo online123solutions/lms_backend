@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: always
+    volumes:
+      - redis_data:/data
+
+  web:
+    build: .
+    restart: always
+    ports:
+      - "8004:8000"
+    env_file:
+      - .env.staging
+    environment:
+      - DJANGO_SETTINGS_MODULE=lms.settings.staging
+    volumes:
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    depends_on:
+      - redis
+    command: >
+      sh -c "python manage.py migrate --no-input &&
+             python manage.py collectstatic --no-input &&
+             daphne -b 0.0.0.0 -p 8000 lms.asgi:application"
+
+  celery:
+    build: .
+    restart: always
+    env_file:
+      - .env.staging
+    environment:
+      - DJANGO_SETTINGS_MODULE=lms.settings.staging
+    volumes:
+      - media_volume:/app/media
+    depends_on:
+      - redis
+    command: celery -A lms worker -l info
+
+volumes:
+  redis_data:
+  static_volume:
+  media_volume:

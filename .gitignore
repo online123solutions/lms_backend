@@ -17,6 +17,10 @@ media/
 staticfiles/
 static/
 
+# Environment files (keep .example files, exclude real ones)
+.env.staging
+.env.production
+
 # IDE
 .vscode/
 .idea/
