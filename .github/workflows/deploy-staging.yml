@@ -21,7 +21,7 @@ jobs:
           script: |
             set -e
 
-            cd /opt/staging/lms
+            cd /opt/staging/lms/lms_backend
 
             echo "Pulling latest staging branch..."
             git pull origin staging
