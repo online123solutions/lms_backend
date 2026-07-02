@@ -51,7 +51,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://www.steel.study",
     "https://app.steel.study",
     "https://www.app.steel.study",
-    "https://lms.steel.study",
+    # "https://lms.steel.study",
     "https://lms.staging.steel.study"
 ]
 
