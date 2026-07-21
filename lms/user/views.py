@@ -232,8 +232,11 @@ class UploadUsersExcelView(APIView):
                 if role not in ['trainee', 'employee', 'trainer', 'admin']:
                     raise ValueError(f"Invalid role: {role}")
 
-                # Convert password to string (Excel may read numbers as integers)
-                password = str(password)
+                # Convert password to string (Excel may read numeric passwords as int/float)
+                if isinstance(password, float) and password.is_integer():
+                    password = str(int(password))
+                else:
+                    password = str(password)
                 
                 print(f"DEBUG: Processing user {username} with password: {password}")
 
@@ -252,7 +255,7 @@ class UploadUsersExcelView(APIView):
                     email=email,
                     password=password,
                     role=role,
-                    is_active=False
+                    is_active=True
                 )
                 
                 print(f"DEBUG: Created user {username}, password hash starts with: {user.password[:20]}")
