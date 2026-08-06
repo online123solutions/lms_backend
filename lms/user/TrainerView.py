@@ -1200,11 +1200,11 @@ class TaskAssignmentViewSet(viewsets.ViewSet):
 
         elif role == "trainer":
             tp = self._trainer_profile(user)
-            q = Q()
+            q = Q(created_by=user)
             if tp:
                 depts = get_trainer_allowed_departments(tp)
                 if depts:
-                    q &= Q(department__in=depts)
+                    q |= Q(department__in=depts)
             qs = self._apply_filters(self._base_qs().filter(q)).order_by("-created_at")
 
         elif role in ("trainee", "employee"):
