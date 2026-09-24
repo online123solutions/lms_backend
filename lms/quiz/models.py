@@ -1,4 +1,5 @@
 from django.db import models
+from django.core.exceptions import ValidationError
 from user.models import *
 
 Department=[
@@ -59,22 +60,35 @@ class Quiz(models.Model):
 
 class Question(models.Model):
     question_number=models.IntegerField()
-    question=models.CharField(max_length=500)
+    question=models.CharField(max_length=500, blank=True, default='', help_text="optional if a question image is uploaded")
+    question_image=models.ImageField(upload_to='quiz/questions/', blank=True, null=True, help_text="diagram/image for the question; can be the complete question")
     quiz=models.ForeignKey(Quiz, on_delete=models.CASCADE)
 
     def __str__(self):
-        return str(self.question)
+        return self.question or f"Question {self.question_number} (image)"
+
+    def clean(self):
+        if not self.question and not self.question_image:
+            raise ValidationError("Enter the question text or upload a question image.")
     
     def get_answers(self):
         return self.answer_set.all()
 
 class Answer(models.Model):
-    answer=models.CharField(max_length=500)
+    answer=models.CharField(max_length=500, blank=True, default='', help_text="optional if an option image is uploaded")
+    answer_image=models.ImageField(upload_to='quiz/answers/', blank=True, null=True, help_text="image for this option; can be the complete option")
     correct=models.BooleanField(default=False)
     question=models.ForeignKey(Question, on_delete=models.CASCADE)
 
     def __str__(self):
-        return f"Answer-{self.answer},Correct-{self.correct}"
+        return f"Answer-{self.answer or '(image)'},Correct-{self.correct}"
+
+    def clean(self):
+        if not self.answer and not self.answer_image:
+            raise ValidationError("Enter the option text or upload an option image.")
+
+    def image_url(self, request):
+        return request.build_absolute_uri(self.answer_image.url) if self.answer_image else None
     
 class Result(models.Model):
     quiz=models.ForeignKey(Quiz, on_delete=models.CASCADE)

@@ -59,11 +59,26 @@ class QuizDataAPIView(APIView):
     def get(self, request, pk):
         quiz = Quiz.objects.get(pk=pk)
         question_data = []
+        questions = []
         for q in quiz.get_questions():
-            answers = [a.answer for a in q.get_answers()]
-            question_data.append({str(q): answers})
-        
-        return Response({'data': question_data, 'time': quiz.time}) 
+            answers = q.get_answers()
+            question_data.append({str(q): [a.answer for a in answers]})
+            questions.append({
+                'id': q.id,
+                'question_number': q.question_number,
+                'question': q.question,
+                'question_image': request.build_absolute_uri(q.question_image.url) if q.question_image else None,
+                'answers': [
+                    {
+                        'id': a.id,
+                        'answer': a.answer,
+                        'answer_image': a.image_url(request),
+                    }
+                    for a in answers
+                ],
+            })
+
+        return Response({'data': question_data, 'questions': questions, 'time': quiz.time})
 
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -102,12 +117,22 @@ class QuizResultAPIView(APIView):
         # Step 2: Track feedback list
         questions_feedback = []
 
-        for question_text, answer_selected in data.items():
-            try:
-                question = Question.objects.get(question=question_text, quiz=quiz)
-            except Question.MultipleObjectsReturned:
-                question = Question.objects.filter(question=question_text, quiz=quiz).first()
-            except Question.DoesNotExist:
+        # New format: {"answers": [{"question_id": 5, "answer_id": 12}, ...]}
+        # Old format: {"<question text>": "<answer text>", ...}
+        if isinstance(data.get("answers"), list):
+            submitted = [
+                (item.get("question_id"), item.get("answer_id"), True)
+                for item in data["answers"] if isinstance(item, dict)
+            ]
+        else:
+            submitted = [(q, a, False) for q, a in data.items()]
+
+        for question_key, answer_selected, by_id in submitted:
+            if by_id:
+                question = Question.objects.filter(pk=question_key, quiz=quiz).first()
+            else:
+                question = Question.objects.filter(question=question_key, quiz=quiz).first()
+            if not question:
                 continue  # Skip invalid question
 
             correct_answer_obj = Answer.objects.filter(question=question, correct=True).first()
@@ -118,7 +143,10 @@ class QuizResultAPIView(APIView):
             is_correct = False
 
             if answer_selected:
-                selected_answer_obj = Answer.objects.filter(question=question, answer=answer_selected).first()
+                if by_id:
+                    selected_answer_obj = Answer.objects.filter(question=question, pk=answer_selected).first()
+                else:
+                    selected_answer_obj = Answer.objects.filter(question=question, answer=answer_selected).first()
                 if selected_answer_obj:
                     selected_answer_text = selected_answer_obj.answer
                     if selected_answer_obj.correct:
@@ -142,9 +170,13 @@ class QuizResultAPIView(APIView):
 
             # Store feedback
             questions_feedback.append({
+                "question_id": question.id,
                 "question": question.question,
+                "question_image": request.build_absolute_uri(question.question_image.url) if question.question_image else None,
                 "correct_answer": correct_answer_text,
+                "correct_answer_image": correct_answer_obj.image_url(request) if correct_answer_obj else None,
                 "student_answer": selected_answer_text,
+                "student_answer_image": selected_answer_obj.image_url(request) if selected_answer_obj else None,
                 "is_correct": is_correct
             })
 
@@ -156,10 +188,10 @@ class QuizResultAPIView(APIView):
         result.unattempted_questions = unattempted_questions
         result.save()
 
-        # Step 4: Certificate
+        # Step 4: Certificate (generation disabled for now)
         passed = final_score >= quiz.passing_score_percentage
-        certificate_file = generate_certificate(user, quiz, final_score, passed, result.date_attempted)
-        result.certificate.save(certificate_file.name, certificate_file)
+        # certificate_file = generate_certificate(user, quiz, final_score, passed, result.date_attempted)
+        # result.certificate.save(certificate_file.name, certificate_file)
 
         # Step 5: Return full response
         return Response({

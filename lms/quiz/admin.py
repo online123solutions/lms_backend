@@ -2,10 +2,23 @@ from django.contrib import admin
 from .models import Quiz, Question, Answer,Result,ResultAnswer
 from user.models import CustomUser
 from django.contrib.admin import SimpleListFilter
+from django.utils.html import format_html
+
+
+def image_preview(image, height=80):
+    if not image:
+        return "-"
+    return format_html('<img src="{}" style="max-height:{}px;" />', image.url, height)
 
 # Inline admin for answers
 class AnswerInLine(admin.TabularInline):
     model = Answer
+    fields = ['answer', 'answer_image', 'image_preview', 'correct']
+    readonly_fields = ['image_preview']
+
+    @admin.display(description='Preview')
+    def image_preview(self, obj):
+        return image_preview(obj.answer_image)
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
@@ -16,8 +29,18 @@ class AnswerInLine(admin.TabularInline):
 
 class QuestionAdmin(admin.ModelAdmin):
     inlines = [AnswerInLine]
-    list_display = ['question_number', 'question']
+    list_display = ['question_number', 'question', 'has_image']
     list_filter = ['quiz']
+    fields = ['question_number', 'question', 'question_image', 'image_preview', 'quiz']
+    readonly_fields = ['image_preview']
+
+    @admin.display(description='Preview')
+    def image_preview(self, obj):
+        return image_preview(obj.question_image, height=200)
+
+    @admin.display(description='Image', boolean=True)
+    def has_image(self, obj):
+        return bool(obj.question_image)
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)

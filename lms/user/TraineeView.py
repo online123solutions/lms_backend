@@ -205,8 +205,11 @@ class TraineeDashboardView(APIView):
 
                 feedback.append({
                     "question": ans.question.question,
+                    "question_image": self.request.build_absolute_uri(ans.question.question_image.url) if ans.question.question_image else None,
                     "correct_answer": correct_answer_text,
+                    "correct_answer_image": correct_answer_obj.image_url(self.request) if correct_answer_obj else None,
                     "trainee_answer": selected_answer_text,
+                    "trainee_answer_image": ans.selected_answer.image_url(self.request) if ans.selected_answer else None,
                     "is_correct": ans.is_correct
                 })
 
@@ -242,7 +245,7 @@ class TraineeDashboardView(APIView):
             subjects_data = SubjectSerializer(subjects, many=True).data
 
             quizzes = Quiz.objects.filter(department=trainee_obj.department, start_date__lte=now(), end_date__gte=now())
-            quiz_serializer = QuizSerializer(quizzes, many=True)
+            quiz_serializer = QuizSerializer(quizzes, many=True, context={"request": request})
 
             login_count= UserLoginActivity.objects.filter(login_username=user).count()
             homework_reports = self.get_trainee_reports(trainee_obj, "homework")
@@ -258,7 +261,7 @@ class TraineeDashboardView(APIView):
                 start_date__lte=now(),
                 end_date__gte=now(),
             )
-            active_homework = QuizSerializer(active_homework, many=True)
+            active_homework = QuizSerializer(active_homework, many=True, context={"request": request})
 
             # Lesson completion tracking
             completions = TraineeLessonCompletion.objects.filter(

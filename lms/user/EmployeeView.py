@@ -76,8 +76,11 @@ class EmployeeDashboardView(APIView):
                 selected_answer_text = ans.selected_answer.answer if ans.selected_answer else None
                 feedback.append({
                     "question": ans.question.question,
+                    "question_image": self.request.build_absolute_uri(ans.question.question_image.url) if ans.question.question_image else None,
                     "correct_answer": correct_answer_text,
+                    "correct_answer_image": correct_answer_obj.image_url(self.request) if correct_answer_obj else None,
                     "employee_answer": selected_answer_text,
+                    "employee_answer_image": ans.selected_answer.image_url(self.request) if ans.selected_answer else None,
                     "is_correct": ans.is_correct
                 })
 
@@ -179,7 +182,7 @@ class EmployeeDashboardView(APIView):
                 start_date__lte=timezone.now(),
                 end_date__gte=timezone.now()
             )
-            quiz_serializer = QuizSerializer(quizzes, many=True)
+            quiz_serializer = QuizSerializer(quizzes, many=True, context={"request": request})
 
             # Login count
             login_count = UserLoginActivity.objects.filter(login_username=user).count()
@@ -200,7 +203,8 @@ class EmployeeDashboardView(APIView):
                     start_date__lte=timezone.now(),
                     end_date__gte=timezone.now()
                 ),
-                many=True
+                many=True,
+                context={"request": request}
             ).data
 
             # Active quizzes with attempt status
