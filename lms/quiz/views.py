@@ -218,3 +218,116 @@ class QuizResultAPIView(APIView):
             "unattempted_questions": unattempted_questions,
             "questions_feedback": questions_feedback
         })
+
+
+def can_review_answers(user):
+    return user.is_superuser or getattr(user, "role", "") in ("admin", "trainer")
+
+
+def can_review_result(user, result):
+    """Admins can review any attempt; trainers only attempts from their assigned departments."""
+    if user.is_superuser or getattr(user, "role", "") == "admin":
+        return True
+    if getattr(user, "role", "") != "trainer":
+        return False
+    from user.models import TrainerProfile
+    from user.TrainerView import get_trainer_allowed_departments  # imported here to avoid a circular import
+    trainer = TrainerProfile.objects.filter(user=user).first()
+    if not trainer:
+        return False
+    student = (TraineeProfile.objects.filter(user=result.user).first()
+               or EmployeeProfile.objects.filter(user=result.user).first())
+    department = student.department if student else result.quiz.department
+    return department in get_trainer_allowed_departments(trainer)
+
+
+class QuizAttemptDetailAPIView(APIView):
+    """All questions of a quiz with one user's submitted answers, for admins/trainers to review."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk, username):
+        if not can_review_answers(request.user):
+            return Response({"detail": "Not allowed."}, status=status.HTTP_403_FORBIDDEN)
+
+        result = (Result.objects.filter(quiz_id=pk, user__username__iexact=username)
+                  .select_related("quiz", "user").order_by("-date_attempted").first())
+        if not result:
+            raise NotFound("This user has not attempted this quiz.")
+        if not can_review_result(request.user, result):
+            return Response({"detail": "This trainee is not in your departments."}, status=status.HTTP_403_FORBIDDEN)
+
+        submitted = {ra.question_id: ra for ra in result.resultanswer_set.select_related("selected_answer")}
+        image = lambda f: request.build_absolute_uri(f.url) if f else None
+
+        questions = []
+        for q in result.quiz.question_set.order_by("question_number", "id").prefetch_related("answer_set"):
+            options = list(q.answer_set.all())
+            correct = next((a for a in options if a.correct), None)
+            ra = submitted.get(q.id)
+            questions.append({
+                "question_id": q.id,
+                "question_number": q.question_number,
+                "question": q.question,
+                "question_image": image(q.question_image),
+                "options": [
+                    {"id": a.id, "answer": a.answer, "answer_image": image(a.answer_image), "correct": a.correct}
+                    for a in options
+                ],
+                "correct_answer": (correct.answer if correct else "") or q.expected_answer or None,
+                "correct_answer_image": image(correct.answer_image) if correct else None,
+                # Submitted answer (all None if the user skipped the question)
+                "result_answer_id": ra.id if ra else None,
+                "selected_answer_id": ra.selected_answer_id if ra else None,
+                "selected_answer": ra.selected_answer.answer if ra and ra.selected_answer else None,
+                "custom_answer": (ra.custom_answer or None) if ra else None,
+                "is_correct": ra.is_correct if ra else False,
+            })
+
+        profile = (TraineeProfile.objects.filter(user=result.user).first()
+                   or EmployeeProfile.objects.filter(user=result.user).first())
+
+        return Response({
+            "result_id": result.id,
+            "quiz_id": result.quiz_id,
+            "quiz_name": result.quiz.quiz_name,
+            "passing_score_percentage": result.quiz.passing_score_percentage,
+            "username": result.user.username,
+            "name": (profile.name if profile else "") or result.user.get_full_name() or result.user.username,
+            "score": round(result.score, 2),
+            "correct_questions": result.correct_questions,
+            "wrong_questions": result.wrong_questions,
+            "unattempted_questions": result.unattempted_questions,
+            "date_attempted": result.date_attempted,
+            "questions": questions,
+        })
+
+
+class ResultAnswerMarkAPIView(APIView):
+    """Mark one submitted answer correct/incorrect; the result's score is recalculated."""
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk):
+        if not can_review_answers(request.user):
+            return Response({"detail": "Not allowed."}, status=status.HTTP_403_FORBIDDEN)
+        if not isinstance(request.data.get("is_correct"), bool):
+            return Response({"detail": "is_correct must be true or false."}, status=status.HTTP_400_BAD_REQUEST)
+
+        ra = ResultAnswer.objects.select_related("result__quiz").filter(pk=pk).first()
+        if not ra:
+            raise NotFound("Answer not found.")
+        if not can_review_result(request.user, ra.result):
+            return Response({"detail": "This trainee is not in your departments."}, status=status.HTTP_403_FORBIDDEN)
+        if not ra.selected_answer_id and not ra.custom_answer:
+            return Response({"detail": "This question was not answered."}, status=status.HTTP_400_BAD_REQUEST)
+        ra.is_correct = request.data["is_correct"]
+        ra.save(update_fields=["is_correct"])
+        result = ra.result
+        result.recalculate()
+
+        return Response({
+            "result_answer_id": ra.id,
+            "is_correct": ra.is_correct,
+            "score": round(result.score, 2),
+            "correct_questions": result.correct_questions,
+            "wrong_questions": result.wrong_questions,
+        })
