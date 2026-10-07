@@ -31,7 +31,7 @@ class QuestionAdmin(admin.ModelAdmin):
     inlines = [AnswerInLine]
     list_display = ['question_number', 'question', 'has_image']
     list_filter = ['quiz']
-    fields = ['question_number', 'question', 'question_image', 'image_preview', 'quiz', 'allow_custom_answer']
+    fields = ['question_number', 'question', 'question_image', 'image_preview', 'quiz', 'allow_custom_answer', 'expected_answer']
     readonly_fields = ['image_preview']
 
     @admin.display(description='Preview')
@@ -81,8 +81,13 @@ admin.site.register(Quiz, QuizAdmin)
 admin.site.register(Result,ResultAdmin)
 class ResultAnswerAdmin(admin.ModelAdmin):
     list_display = ['result', 'question', 'selected_answer', 'custom_answer', 'is_correct']
+    list_editable = ['is_correct']  # tick to accept a written answer; the score updates
     list_filter = ['is_correct', 'result__quiz']
     search_fields = ['custom_answer', 'result__user__username']
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        obj.result.recalculate()
 
 
 admin.site.register(ResultAnswer, ResultAnswerAdmin)

@@ -70,7 +70,8 @@ class Question(models.Model):
     question=models.CharField(max_length=500, blank=True, default='', help_text="optional if a question image is uploaded")
     question_image=models.ImageField(upload_to='quiz/questions/', blank=True, null=True, help_text="diagram/image for the question; can be the complete question")
     quiz=models.ForeignKey(Quiz, on_delete=models.CASCADE)
-    allow_custom_answer=models.BooleanField(default=True, help_text="show a 'write your own answer' option; it is correct if it matches the correct option's text")
+    allow_custom_answer=models.BooleanField(default=True, help_text="show a 'write your own answer' box (always shown when the question has no options)")
+    expected_answer=models.CharField(max_length=500, blank=True, default='', help_text="optional: a written answer matching this (or the correct option's text) is marked correct automatically; other written answers can be reviewed under Result answers")
 
     def __str__(self):
         return self.question or f"Question {self.question_number} (image)"
@@ -84,8 +85,17 @@ class Question(models.Model):
 
     @property
     def custom_answer_enabled(self):
-        """Typed answers only make sense when the correct option has text to match."""
-        return self.allow_custom_answer and self.answer_set.filter(correct=True).exclude(answer='').exists()
+        """Questions without options are always written-answer questions."""
+        return self.allow_custom_answer or not self.answer_set.exists()
+
+    def matches_typed_answer(self, text):
+        typed = normalize_answer(text)
+        if not typed:
+            return False
+        accepted = [self.expected_answer] + list(
+            self.answer_set.filter(correct=True).values_list('answer', flat=True)
+        )
+        return any(typed == normalize_answer(a) for a in accepted if a)
 
 class Answer(models.Model):
     answer=models.CharField(max_length=500, blank=True, default='', help_text="optional if an option image is uploaded")
@@ -116,6 +126,16 @@ class Result(models.Model):
 
     def __str__(self):
         return str(self.user)
+
+    def recalculate(self):
+        """Recompute counts and score from the saved answers (e.g. after manual review)."""
+        answers = self.resultanswer_set.all()
+        attempted = answers.exclude(selected_answer__isnull=True, custom_answer='')
+        self.correct_questions = answers.filter(is_correct=True).count()
+        self.wrong_questions = attempted.filter(is_correct=False).count()
+        total = self.quiz.no_of_questions or 1
+        self.score = round(self.correct_questions * 100 / total, 2)
+        self.save()
     
 class ResultAnswer(models.Model):
     result = models.ForeignKey(Result, on_delete=models.CASCADE)

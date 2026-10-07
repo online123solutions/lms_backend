@@ -137,7 +137,7 @@ class QuizResultAPIView(APIView):
                 continue  # Skip invalid question
 
             correct_answer_obj = Answer.objects.filter(question=question, correct=True).first()
-            correct_answer_text = correct_answer_obj.answer if correct_answer_obj else "N/A"
+            correct_answer_text = (correct_answer_obj.answer if correct_answer_obj else "") or question.expected_answer or "N/A"
 
             selected_answer_obj = None
             selected_answer_text = None
@@ -147,10 +147,10 @@ class QuizResultAPIView(APIView):
                 custom_answer = ""
 
             if custom_answer and not answer_selected:
-                # Typed answer: correct if it matches the correct option's text
+                # Written answer: correct if it matches the expected answer or the correct option's text,
+                # otherwise saved as wrong and can be reviewed in admin (Result answers)
                 selected_answer_text = custom_answer
-                if correct_answer_obj and correct_answer_obj.answer and \
-                        normalize_answer(custom_answer) == normalize_answer(correct_answer_obj.answer):
+                if question.matches_typed_answer(custom_answer):
                     is_correct = True
                     score += 1
                     correct_questions += 1
