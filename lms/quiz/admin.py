@@ -70,10 +70,40 @@ class QuizAdmin(admin.ModelAdmin):
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
     
+class ResultAnswerInline(admin.TabularInline):
+    """Submitted answers on the result page; tick 'Is correct' to accept a written answer."""
+    model = ResultAnswer
+    fields = ['question', 'selected_answer', 'custom_answer', 'expected', 'is_correct']
+    readonly_fields = ['question', 'selected_answer', 'custom_answer', 'expected']
+    extra = 0
+    can_delete = False
+    verbose_name_plural = "Submitted answers (tick 'Is correct' to accept a written answer, then Save)"
+
+    @admin.display(description='Correct answer')
+    def expected(self, obj):
+        correct = obj.question.answer_set.filter(correct=True).first()
+        return (correct.answer if correct else "") or obj.question.expected_answer or "-"
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
 class ResultAdmin(admin.ModelAdmin):
     list_display = ('user', 'quiz', 'score', 'date_attempted')
     list_filter = ('quiz__department','quiz__quiz_type', 'date_attempted')  # Direct filters
     search_fields = ('user__username', 'user__trainee__name', 'quiz__quiz_name')
+    inlines = [ResultAnswerInline]
+
+    def get_readonly_fields(self, request, obj=None):
+        # Score fields are recalculated from the submitted answers on save
+        if obj:
+            return ('score', 'correct_questions', 'wrong_questions', 'unattempted_questions')
+        return ()
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        if change:
+            form.instance.recalculate()
 
 # admin.site.register(Answer)
 admin.site.register(Question, QuestionAdmin)
