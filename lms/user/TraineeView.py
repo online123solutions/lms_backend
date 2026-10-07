@@ -201,7 +201,7 @@ class TraineeDashboardView(APIView):
             for ans in answers:
                 correct_answer_obj = Answer.objects.filter(question=ans.question, correct=True).first()
                 correct_answer_text = correct_answer_obj.answer if correct_answer_obj else "N/A"
-                selected_answer_text = ans.selected_answer.answer if ans.selected_answer else None
+                selected_answer_text = ans.selected_answer.answer if ans.selected_answer else (ans.custom_answer or None)
 
                 feedback.append({
                     "question": ans.question.question,

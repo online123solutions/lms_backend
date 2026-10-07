@@ -1,6 +1,13 @@
 from django.db import models
 from django.core.exceptions import ValidationError
+import re
+
 from user.models import *
+
+
+def normalize_answer(text):
+    """Lowercase and collapse whitespace so typed answers compare loosely."""
+    return re.sub(r"\s+", " ", (text or "")).strip().lower()
 
 Department=[
     ('HR', 'Human Resources'),
@@ -63,6 +70,7 @@ class Question(models.Model):
     question=models.CharField(max_length=500, blank=True, default='', help_text="optional if a question image is uploaded")
     question_image=models.ImageField(upload_to='quiz/questions/', blank=True, null=True, help_text="diagram/image for the question; can be the complete question")
     quiz=models.ForeignKey(Quiz, on_delete=models.CASCADE)
+    allow_custom_answer=models.BooleanField(default=True, help_text="show a 'write your own answer' option; it is correct if it matches the correct option's text")
 
     def __str__(self):
         return self.question or f"Question {self.question_number} (image)"
@@ -73,6 +81,11 @@ class Question(models.Model):
     
     def get_answers(self):
         return self.answer_set.all()
+
+    @property
+    def custom_answer_enabled(self):
+        """Typed answers only make sense when the correct option has text to match."""
+        return self.allow_custom_answer and self.answer_set.filter(correct=True).exclude(answer='').exists()
 
 class Answer(models.Model):
     answer=models.CharField(max_length=500, blank=True, default='', help_text="optional if an option image is uploaded")
@@ -108,6 +121,7 @@ class ResultAnswer(models.Model):
     result = models.ForeignKey(Result, on_delete=models.CASCADE)
     question = models.ForeignKey(Question, on_delete=models.CASCADE)
     selected_answer = models.ForeignKey(Answer, on_delete=models.SET_NULL, null=True, blank=True)
+    custom_answer = models.TextField(blank=True, default='', help_text="answer typed by the user instead of picking an option")
     is_correct = models.BooleanField(default=False)
 
     def __str__(self):

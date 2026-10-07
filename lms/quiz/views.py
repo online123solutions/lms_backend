@@ -2,7 +2,7 @@ from django.shortcuts import render
 from rest_framework.generics import ListAPIView,RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
 from .serializers import QuizSerializer
-from .models import Quiz,Question,Answer,Result,ResultAnswer
+from .models import Quiz,Question,Answer,Result,ResultAnswer,normalize_answer
 from user.models import TraineeProfile,EmployeeProfile
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -68,6 +68,7 @@ class QuizDataAPIView(APIView):
                 'question_number': q.question_number,
                 'question': q.question,
                 'question_image': request.build_absolute_uri(q.question_image.url) if q.question_image else None,
+                'allow_custom_answer': q.custom_answer_enabled,
                 'answers': [
                     {
                         'id': a.id,
@@ -117,17 +118,17 @@ class QuizResultAPIView(APIView):
         # Step 2: Track feedback list
         questions_feedback = []
 
-        # New format: {"answers": [{"question_id": 5, "answer_id": 12}, ...]}
+        # New format: {"answers": [{"question_id": 5, "answer_id": 12}, {"question_id": 6, "custom_answer": "text"}, ...]}
         # Old format: {"<question text>": "<answer text>", ...}
         if isinstance(data.get("answers"), list):
             submitted = [
-                (item.get("question_id"), item.get("answer_id"), True)
+                (item.get("question_id"), item.get("answer_id"), True, str(item.get("custom_answer") or "").strip())
                 for item in data["answers"] if isinstance(item, dict)
             ]
         else:
-            submitted = [(q, a, False) for q, a in data.items()]
+            submitted = [(q, a, False, "") for q, a in data.items()]
 
-        for question_key, answer_selected, by_id in submitted:
+        for question_key, answer_selected, by_id, custom_answer in submitted:
             if by_id:
                 question = Question.objects.filter(pk=question_key, quiz=quiz).first()
             else:
@@ -142,7 +143,20 @@ class QuizResultAPIView(APIView):
             selected_answer_text = None
             is_correct = False
 
-            if answer_selected:
+            if not question.custom_answer_enabled:
+                custom_answer = ""
+
+            if custom_answer and not answer_selected:
+                # Typed answer: correct if it matches the correct option's text
+                selected_answer_text = custom_answer
+                if correct_answer_obj and correct_answer_obj.answer and \
+                        normalize_answer(custom_answer) == normalize_answer(correct_answer_obj.answer):
+                    is_correct = True
+                    score += 1
+                    correct_questions += 1
+                else:
+                    wrong_questions += 1
+            elif answer_selected:
                 if by_id:
                     selected_answer_obj = Answer.objects.filter(question=question, pk=answer_selected).first()
                 else:
@@ -165,6 +179,7 @@ class QuizResultAPIView(APIView):
                 result=result,
                 question=question,
                 selected_answer=selected_answer_obj,
+                custom_answer=custom_answer if not selected_answer_obj else "",
                 is_correct=is_correct
             )
 
@@ -177,6 +192,7 @@ class QuizResultAPIView(APIView):
                 "correct_answer_image": correct_answer_obj.image_url(request) if correct_answer_obj else None,
                 "student_answer": selected_answer_text,
                 "student_answer_image": selected_answer_obj.image_url(request) if selected_answer_obj else None,
+                "is_custom_answer": bool(custom_answer and not selected_answer_obj),
                 "is_correct": is_correct
             })
 

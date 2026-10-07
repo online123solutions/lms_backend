@@ -31,7 +31,7 @@ class QuestionAdmin(admin.ModelAdmin):
     inlines = [AnswerInLine]
     list_display = ['question_number', 'question', 'has_image']
     list_filter = ['quiz']
-    fields = ['question_number', 'question', 'question_image', 'image_preview', 'quiz']
+    fields = ['question_number', 'question', 'question_image', 'image_preview', 'quiz', 'allow_custom_answer']
     readonly_fields = ['image_preview']
 
     @admin.display(description='Preview')
@@ -79,4 +79,10 @@ class ResultAdmin(admin.ModelAdmin):
 admin.site.register(Question, QuestionAdmin)
 admin.site.register(Quiz, QuizAdmin)
 admin.site.register(Result,ResultAdmin)
-admin.site.register(ResultAnswer)
+class ResultAnswerAdmin(admin.ModelAdmin):
+    list_display = ['result', 'question', 'selected_answer', 'custom_answer', 'is_correct']
+    list_filter = ['is_correct', 'result__quiz']
+    search_fields = ['custom_answer', 'result__user__username']
+
+
+admin.site.register(ResultAnswer, ResultAnswerAdmin)

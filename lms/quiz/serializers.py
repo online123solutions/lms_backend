@@ -8,6 +8,7 @@ class AnswerSerializer(serializers.ModelSerializer):
 
 class QuestionSerializer(serializers.ModelSerializer):
     answers = AnswerSerializer(many=True, read_only=True, source='get_answers')
+    allow_custom_answer = serializers.BooleanField(source='custom_answer_enabled', read_only=True)
 
     class Meta:
         model = Question
@@ -19,7 +20,7 @@ class QuizSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Quiz
-        fields = ["id", "topic", "department","quiz_type", "questions"]
+        fields = ["id", "quiz_name", "topic", "department", "quiz_type", "no_of_questions", "time", "passing_score_percentage", "questions"]
 
         
 class ResultSerializer(serializers.ModelSerializer):
