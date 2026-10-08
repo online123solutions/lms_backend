@@ -261,7 +261,7 @@ class QuizAttemptDetailAPIView(APIView):
 
         questions = []
         for q in result.quiz.question_set.order_by("question_number", "id").prefetch_related("answer_set"):
-            options = list(q.answer_set.all())
+            options = sorted(q.answer_set.all(), key=lambda a: a.id)
             correct = next((a for a in options if a.correct), None)
             ra = submitted.get(q.id)
             questions.append({

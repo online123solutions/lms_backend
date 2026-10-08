@@ -60,7 +60,8 @@ class Quiz(models.Model):
         return f"{self.quiz_name}-{self.topic}"
     
     def get_questions(self):
-        return self.question_set.all()
+        # Explicit order: PostgreSQL returns rows in no guaranteed order otherwise
+        return self.question_set.order_by('question_number', 'id')
     
     class Meta:
         verbose_name_plural='Quizzes'
@@ -81,7 +82,7 @@ class Question(models.Model):
             raise ValidationError("Enter the question text or upload a question image.")
     
     def get_answers(self):
-        return self.answer_set.all()
+        return self.answer_set.order_by('id')
 
     @property
     def custom_answer_enabled(self):
